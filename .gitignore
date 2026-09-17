@@ -1,0 +1,12 @@
+# Swift build products
+.build/
+dist/
+
+# Local (per-machine) Claude Code settings
+.claude/settings.local.json
+
+# Editor
+.vscode/
+
+# macOS
+.DS_Store
