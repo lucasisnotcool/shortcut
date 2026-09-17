@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Shows exactly what Shortcut sends to Claude, and lets the teacher edit
+/// Shows exactly what Shortcut sends to the model, and lets the teacher edit
 /// the two prompts that are not generated.
 struct PromptEditorView: View {
     @ObservedObject var model: AppModel
@@ -35,7 +35,7 @@ struct PromptEditorView: View {
                 editor(
                     text: $instructions,
                     defaultText: PromptSettings.defaultInstructions,
-                    caption: "The system prompt for every request, placed after the reference documents. Applies from the next request; the conversation does not need a reset. Changing it makes the next request reload the course files into Claude's cache (slower, about $1.70 notional, once)."
+                    caption: "The system prompt for every request, placed after the reference documents. Applies from the next request; the conversation does not need a reset. Changing it makes the next request reload the course files into the provider's prompt cache (slower, and with Claude Opus about $1.70 notional, once)."
                 )
             case .windowCheck:
                 editor(
@@ -101,8 +101,9 @@ struct PromptEditorView: View {
 
     private var assembled: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Each request runs `claude -p --model \(ClaudeService.model)`, resuming the shared session, with:")
+            Text("Each request goes to the first available model in Models… (\(model.models.enabledEntries.first?.label ?? "none switched on")). Claude Code runs `claude -p`, resuming the shared session; API models get the same parts, with the conversation replayed as text:")
                 .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 10) {
                 part("1", "System prompt, part 1 — reference documents (generated)",
                      "Text of \(model.context.files.filter { if case .inline = $0.status { return true } else { return false } }.count) files from your reference folders in <documents> tags, ≈\(model.context.inlineTokens.formatted()) tokens, plus any on-demand files. Rebuilt when files change.")
@@ -111,7 +112,7 @@ struct PromptEditorView: View {
                 part("3", "Message — what you typed, or the Window Check prompt (editable) with the screenshot attached",
                      "Pasted images and screenshots are attached inline. The context check (Verify) sends its own fixed message.")
                 part("4", "Tools",
-                     "Read, WebSearch and WebFetch only; read access limited to the reference folders. Customizations, hooks and MCP servers are disabled.")
+                     "Claude Code: Read, WebSearch and WebFetch only; read access limited to the reference folders; customizations, hooks and MCP servers are disabled. API models: a read-only Read tool limited to the same folders, and the provider's web search where it is switched on. A short note on which tools are available follows the instructions.")
             }
             Text("The exact system prompt of the most recent request is saved on this Mac.")
                 .font(.caption).foregroundStyle(.secondary)

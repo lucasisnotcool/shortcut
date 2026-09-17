@@ -2,7 +2,8 @@
 
 Shortcut is a private macOS menu-bar assistant for teaching: it checks the
 multiple-choice question on screen against the course materials while Lucas
-presents. It is built, signed and in daily use on Lucas's Mac. Read README.md
+presents. Answers come from a ranked model list (Claude Code by default, plus
+BYOK API providers and local models). It is built, signed and in daily use on Lucas's Mac. Read README.md
 first for what exists.
 
 **Setting Shortcut up for someone else, or on another Mac?** Read AGENTS.md
@@ -41,6 +42,14 @@ how to build and grant permissions, and how to test it with them.
   you commit; prefix a command with `SHORTCUT_DEV_UPDATE=0` to skip (e.g.
   during QC runs). Reinstall with `scripts/install-dev-hooks.sh`. Don't
   install the release DMG on this Mac: it would replace the dev copy.
+- Models: `ModelConfig.swift` (`ProviderKind` presets, `ModelEntry`,
+  `ModelStore` in the `Shortcut.Models` default, `KeychainKeyStore`),
+  `LLMClients.swift` (Anthropic, OpenAI-compatible, Gemini and Ollama
+  clients, `ProviderError` classification, `ModelCatalog` listing/testing),
+  `ModelRouter.swift` (fallback, cooldowns, transcript replay, CLI catch-up),
+  `ReferenceReader.swift` (the sandboxed Read tool), `ModelsView.swift`
+  (the Models… sheet). Tests use `ScriptedTransport` and `StubCLI`; no test
+  touches the network or the Keychain.
 - Relaunch: `osascript -e 'quit app id "io.github.lucasisnotcool.shortcut"'; open dist/Shortcut.app`.
   The bundle id is `io.github.lucasisnotcool.shortcut` (`AppIdentity`);
   it was `local.lohzh.AnswerCircle` before 1.0, and `AppIdentity` migrates
@@ -61,15 +70,22 @@ how to build and grant permissions, and how to test it with them.
 
 ## Invariants
 
-1. One Claude session for everything (overlay chat, window checks, main
-   window). Reset clears the conversation and starts a new session; the
-   reference folders stay.
+1. One conversation for everything (overlay chat, window checks, main
+   window), served by `ModelRouter` one request at a time. The CLI keeps
+   its own session; API models get the saved chat replayed as text (only
+   the current message carries images), and the CLI gets the turns other
+   models answered since its last reply. Reset clears the conversation,
+   starts a new CLI session and clears model cooldowns; the reference
+   folders stay.
 2. Reference files go into the system prompt (`--system-prompt-file`,
    `<documents>` first, instructions after), not the conversation, so they
    survive resets and stay in the prompt cache. Keep that file byte-stable.
-3. Chat and window checks use the same tool list (`Read,WebSearch,WebFetch`)
-   and no `--json-schema`; either difference breaks the cache and adds a turn.
-   Images go inline via `--input-format stream-json`.
+3. Chat and window checks use the same tool list (`Read,WebSearch,WebFetch`
+   for the CLI; the `Read` function tool plus the provider's web search for
+   API models) and no JSON-schema mode; either difference breaks the cache
+   and adds a turn. Images go inline (`--input-format stream-json` for the
+   CLI). API models get the same system prompt plus a `<session_setup>` note
+   after the instructions, so the documents prefix stays cacheable.
 4. Source priority in the prompt: documents → on-demand files → own knowledge
    → web search. Window checks reply with `question_type` first (single,
    multiple, true_false, dropdown, ranking, matching, numeric, fill_blank,
@@ -83,14 +99,22 @@ how to build and grant permissions, and how to test it with them.
    still accepts the old `selected_option` format and old saved chats.
 9. The CLI must bill the claude.ai subscription (usage credits cover
    overflow): `ClaudeService.childEnvironment()` strips API-key, base-URL and
-   cloud-provider variables. `claude auth status` is logged at launch and
+   cloud-provider variables. BYOK keys live only in the Keychain (service
+   `io.github.lucasisnotcool.shortcut.api-keys`, account = provider raw
+   value, or `custom-<uuid>`), never in defaults, logs or the CLI env. `claude auth status` is logged at launch and
    shown in the main window. The instructions and the
    window-check prompt live in `PromptSettings` (defaults there, user edits in
    `Shortcut.Prompt.*` defaults, editable via Prompts… in the main window);
    the reply format and documents block are not editable. Keep the default
    instructions byte-stable unless the change is intended: any edit reloads
    the cache.
-5. The model is pinned to `opus[1m]`.
+5. The default (and migrated) model list is a single Claude Code entry
+   with `opus[1m]`. New models are appended to the bottom. Fallback happens
+   on any request failure (transient errors retry once first and put the
+   model on a 60 s cooldown; key/quota/not-found errors, 10 min); a
+   malformed window-check answer is shown, not retried elsewhere. With one
+   model the teacher sees its own error. Window checks and pasted images
+   skip models without image input.
 6. The UI is monochrome; the menu-bar badge is an outlined template image.
 7. The overlay's reply area never shows a scroller (a scroller toggling at the
    height limit caused an endless layout loop with "always show scroll bars").
@@ -110,4 +134,5 @@ how to build and grant permissions, and how to test it with them.
   generated documents + instructions.
 - `~/Library/Application Support/Shortcut/Conversation/` — the saved chat.
 - `defaults read io.github.lucasisnotcool.shortcut` — session id, reference folders
-  (`Shortcut.ContextRoots`), overlay position, welcome/update/migration flags.
+  (`Shortcut.ContextRoots`), the model list (`Shortcut.Models`, JSON),
+  overlay position, welcome/update/migration flags.

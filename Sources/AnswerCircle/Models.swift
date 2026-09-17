@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Combine
 import CoreGraphics
 import Foundation
 
@@ -22,6 +23,10 @@ struct ChatMessage: Identifiable {
     var answer: AnswerTag? = nil
     /// Set on user messages that represent an active-window check.
     var isWindowCheck = false
+    /// Set on user messages whose text sent to the model differs from what is shown.
+    var promptText: String? = nil
+    /// Set on assistant messages: the model that replied.
+    var answeredBy: AnsweredBy? = nil
 }
 
 enum AnswerBadgeState: Equatable {
@@ -53,17 +58,26 @@ final class AppModel: ObservableObject {
     @Published private(set) var claudeAccount: ClaudeAccount?
     @Published private(set) var availableUpdate: AvailableUpdate?
 
-    private let claude = ClaudeService()
+    let models: ModelStore
+    /// Opens the Models sheet from anywhere in the main window.
+    @Published var isShowingModels = false
+    private let router: ModelRouter
     private let capture = ScreenCaptureService()
     private let conversation: ConversationStore
     private let rootsKey = "Shortcut.ContextRoots"
     private let legacyAttachmentsKey = "AnswerCircle.ContextAttachmentPaths"
     private var indexTask: Task<ContextSnapshot, Never>?
+    private var modelsObserver: AnyCancellable?
 
     var isBusy: Bool { isSending || isAnsweringWindow }
 
-    init(conversation: ConversationStore = ConversationStore()) {
+    init(conversation: ConversationStore = ConversationStore(),
+         models: ModelStore? = nil,
+         router: ModelRouter = ModelRouter()) {
         self.conversation = conversation
+        self.models = models ?? ModelStore()
+        self.router = router
+        modelsObserver = self.models.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         messages = conversation.load()
         claudeExecutableFound = ClaudeService.locateExecutable() != nil
         loadRoots()
@@ -72,8 +86,42 @@ final class AppModel: ObservableObject {
     }
 
     var isSetUp: Bool {
-        claudeExecutableFound && claudeAccount?.usesSubscription == true
-            && accessibilityGranted && screenRecordingGranted
+        hasReadyModel && accessibilityGranted && screenRecordingGranted
+    }
+
+    var claudeReady: Bool { claudeExecutableFound && claudeAccount?.usesSubscription == true }
+
+    /// Whether an enabled model can be tried (the CLI signed in, or an API
+    /// model with what it needs).
+    func isReady(_ entry: ModelEntry) -> Bool {
+        guard entry.isEnabled else { return false }
+        if entry.provider == .claudeCLI { return claudeReady }
+        return models.setupProblem(entry) == nil
+    }
+
+    var readyModels: [ModelEntry] { models.entries.filter(isReady) }
+
+    var hasReadyModel: Bool { !readyModels.isEmpty }
+
+    var usesClaudeCLI: Bool { models.enabledEntries.contains { $0.provider == .claudeCLI } }
+
+    /// What the router needs, looked up here because the Keychain and the
+    /// CLI state live on the main actor.
+    private func routableModels() -> [RoutableModel] {
+        models.entries.map { entry in
+            var problem = entry.provider == .claudeCLI ? nil : models.setupProblem(entry)
+            if entry.provider == .claudeCLI {
+                if !claudeExecutableFound { problem = "Claude Code not installed" }
+                else if claudeAccount?.usesSubscription == false { problem = "Claude Code not signed in to a subscription" }
+            }
+            return RoutableModel(entry: entry, key: entry.provider.acceptsKey ? models.key(for: entry) : nil, problem: problem)
+        }
+    }
+
+    /// After editing models: failures of the old settings no longer count.
+    func modelsChanged() {
+        objectWillChange.send()
+        Task { await router.clearCooldowns() }
     }
 
     // MARK: Permissions
@@ -229,7 +277,8 @@ final class AppModel: ObservableObject {
 
     private func send(text: String, images: [NSImage], prompt: String?) {
         guard !isSending else { return }
-        let userMessage = ChatMessage(role: .user, text: text, images: images)
+        let history = messages
+        let userMessage = ChatMessage(role: .user, text: text, images: images, promptText: prompt)
         messages.append(userMessage)
         isSending = true
         transientError = nil
@@ -237,8 +286,9 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 let context = await currentContext()
-                let response = try await claude.chat(message: userMessage, context: context, prompt: prompt)
-                messages.append(ChatMessage(role: .assistant, text: response, images: []))
+                let reply = try await router.chat(history: history, text: prompt ?? text, images: images,
+                                                  context: context, models: routableModels())
+                messages.append(ChatMessage(role: .assistant, text: reply.value, images: [], answeredBy: reply.answeredBy))
             } catch {
                 appLog.error("Chat failed: \(error.localizedDescription, privacy: .public)")
                 transientError = error.localizedDescription
@@ -264,6 +314,7 @@ final class AppModel: ObservableObject {
                 let capturedURL = try await capture.captureActiveWindow(processID: processID)
                 screenshotURL = capturedURL
                 let screenshotImage = NSImage(contentsOf: capturedURL)
+                let history = messages
                 messages.append(ChatMessage(
                     role: .user,
                     text: "Check the question in the active window.",
@@ -271,14 +322,17 @@ final class AppModel: ObservableObject {
                     isWindowCheck: true
                 ))
                 let context = await currentContext()
-                let answer = try await claude.answerQuestion(screenshot: capturedURL, context: context)
+                let reply = try await router.answerQuestion(history: history, screenshot: capturedURL,
+                                                            context: context, models: routableModels())
+                let answer = reply.value
                 lastWindowAnswer = answer
                 badgeState = answer.isNoAnswer ? .noAnswer : .answer(answer.tag.badgeText)
                 messages.append(ChatMessage(
                     role: .assistant,
                     text: answer.chatText,
                     images: [],
-                    answer: answer.tag
+                    answer: answer.tag,
+                    answeredBy: reply.answeredBy
                 ))
                 appLog.info("Window answer: \(answer.tag.kind.rawValue, privacy: .public) \(answer.tag.values.joined(separator: " | "), privacy: .public)")
             } catch {
@@ -305,7 +359,7 @@ final class AppModel: ObservableObject {
     func resetSession() {
         guard !isBusy else { return }
         Task {
-            await claude.resetSession()
+            await router.reset()
             messages.removeAll()
             conversation.clear()
             pastedImages.removeAll()
@@ -359,6 +413,8 @@ final class ConversationStore {
         let answerIsMultiple: Bool?
         let answerIsTrueFalse: Bool?
         let isWindowCheck: Bool
+        let promptText: String?
+        let answeredBy: AnsweredBy?
     }
 
     private let directory: URL?
@@ -390,7 +446,9 @@ final class ConversationStore {
                                    AnswerTag(legacy: $0, isMultiple: item.answerIsMultiple ?? false,
                                              isTrueFalse: item.answerIsTrueFalse ?? false)
                                },
-                               isWindowCheck: item.isWindowCheck)
+                               isWindowCheck: item.isWindowCheck,
+                               promptText: item.promptText,
+                               answeredBy: item.answeredBy)
         }
     }
 
@@ -410,7 +468,9 @@ final class ConversationStore {
                     answerOption: nil,
                     answerIsMultiple: nil,
                     answerIsTrueFalse: nil,
-                    isWindowCheck: message.isWindowCheck
+                    isWindowCheck: message.isWindowCheck,
+                    promptText: message.promptText,
+                    answeredBy: message.answeredBy
                 )
             }
             try JSONEncoder().encode(stored).write(to: indexURL, options: .atomic)

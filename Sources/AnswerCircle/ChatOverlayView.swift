@@ -225,6 +225,15 @@ struct ReplyView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack {
+                if let answeredBy = message.answeredBy {
+                    Text(answeredBy.fellBack ? "\(answeredBy.label) · fallback" : answeredBy.label)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .help(answeredBy.skipped.isEmpty
+                              ? "Answered by \(answeredBy.label)"
+                              : "Answered by \(answeredBy.label). Skipped: \(answeredBy.skipped.joined(separator: "; "))")
+                }
                 Spacer()
                 Button {
                     NSPasteboard.general.clearContents()

@@ -193,6 +193,12 @@ enum ContextLibrary {
         }
     }
 
+    /// Text of any document type the library can extract, for the Read tool.
+    static func readableText(_ url: URL) async -> String? {
+        if case .text(let text) = await extract(url) { return text }
+        return nil
+    }
+
     private static func clean(_ text: String, empty: String) -> Extraction {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? .unsupported(empty) : .text(trimmed)
