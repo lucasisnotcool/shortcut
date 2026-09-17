@@ -2,6 +2,8 @@
 
 A private, native macOS menu-bar assistant backed by the locally installed Claude CLI, or by your own API keys (Anthropic, OpenAI, Gemini, OpenRouter and more) and local models (Ollama, LM Studio). While you present a quiz, it reads the question on screen, answers it from your course files, and shows the answer to you alone in the menu bar.
 
+https://github.com/user-attachments/assets/f2bd6850-dc85-43fd-a17b-516d93c196d7
+
 ![A demo quiz question on the left and Shortcut's answer, B, with its reasoning on the right](docs/images/check-single.png)
 
 **[See what it does, with screenshots of every question type →](docs/FEATURES.md)** (all demo content)
