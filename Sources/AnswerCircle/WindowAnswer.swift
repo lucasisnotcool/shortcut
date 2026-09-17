@@ -45,6 +45,8 @@ struct AnswerTag: Codable, Equatable {
     /// Selected labels (choice kinds), the order (ranking), the choice per item
     /// (matching), the value (numeric) or the text per blank (fill_blank).
     var values: [String]
+    /// Which question was answered ("Q4 What is the boiling point…"), when Claude says.
+    var question: String? = nil
 
     var isNoAnswer: Bool { kind == .none || values.isEmpty }
 
@@ -89,6 +91,12 @@ struct AnswerTag: Codable, Equatable {
     }
 
     var subtitle: String {
+        guard let question, !question.isEmpty, !isNoAnswer else { return kindDescription }
+        let short = question.count > 48 ? String(question.prefix(47)) + "…" : question
+        return "\(short) · \(kindDescription)"
+    }
+
+    private var kindDescription: String {
         if isNoAnswer { return "Claude could not confirm a question and answer" }
         switch kind {
         case .single: return "From the active window"
@@ -124,9 +132,10 @@ struct AnswerTag: Codable, Equatable {
         else { kind = .single }
     }
 
-    init(kind: AnswerKind, values: [String]) {
+    init(kind: AnswerKind, values: [String], question: String? = nil) {
         self.kind = kind
         self.values = values
+        self.question = question
     }
 }
 

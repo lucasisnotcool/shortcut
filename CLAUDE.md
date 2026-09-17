@@ -44,7 +44,10 @@ first for what exists.
    multiple, true_false, dropdown, ranking, matching, numeric, fill_blank,
    none); the type decides the other fields and the valid labels (1–8 / A–H
    for choices, 1–20 / A–T for dropdown, ranking and matching, T / F for
-   true/false). `AnswerKind` / `AnswerTag` in WindowAnswer.swift own the
+   true/false). The reply starts with "question" (which question was
+   answered); the prompt picks the first fully visible, unfinished question
+   in reading order and forbids mixing options across questions.
+   `AnswerKind` / `AnswerTag` in WindowAnswer.swift own the
    badge text, titles and chat header; messages store the tag. The parser
    still accepts the old `selected_option` format and old saved chats.
 9. The CLI must bill the claude.ai subscription (usage credits cover

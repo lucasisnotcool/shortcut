@@ -298,3 +298,12 @@ private func parse(_ json: String) throws -> WindowAnswer {
     #expect(AnswerTag(legacy: "F", isMultiple: false, isTrueFalse: true).kind == .trueFalse)
     #expect(AnswerTag(legacy: "NONE", isMultiple: false, isTrueFalse: false).isNoAnswer)
 }
+
+@Test func answeredQuestionIsShown() throws {
+    let answer = try parse(#"{"question":"Q4 What is the boiling point of water at sea level?","question_type":"single","options":[{"option":"C","is_answer":true,"reason":"100 °C"}],"explanation":"x"}"#)
+    #expect(answer.tag.question == "Q4 What is the boiling point of water at sea level?")
+    #expect(answer.tag.subtitle == "Q4 What is the boiling point of water at sea le… · From the active window")
+    let none = try parse(#"{"question":"","question_type":"none","explanation":"Nothing visible."}"#)
+    #expect(none.tag.question == nil)
+    #expect(none.tag.subtitle == "Claude could not confirm a question and answer")
+}

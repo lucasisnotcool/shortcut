@@ -451,6 +451,14 @@ enum ClaudeOutputParser {
             throw invalid("Claude returned an unknown question type: \(rawType ?? "")")
         }
 
+        var answer = try parsedAnswer(object, kind: kind, explanation)
+        if let question = string(object["question"])?.trimmingCharacters(in: .whitespacesAndNewlines), !question.isEmpty {
+            answer?.tag.question = question
+        }
+        return answer
+    }
+
+    private static func parsedAnswer(_ object: [String: Any], kind: AnswerKind?, _ explanation: String) throws -> WindowAnswer? {
         switch kind {
         case .none?:
             return .none(explanation)

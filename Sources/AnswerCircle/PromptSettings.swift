@@ -23,23 +23,23 @@ enum PromptSettings {
 
     /// Fixed: the app parses this reply.
     static let windowCheckReplyFormat = """
-    Reply with only one JSON object and nothing else. Decide "question_type" first and write it first; it decides the other fields and which labels are valid. Every object ends with "explanation".
+    Reply with only one JSON object and nothing else. Write "question" first: the number and opening words of the one question you are answering (for example "Q4 What is the boiling point…"), or "" when there is none. Then decide and write "question_type"; it decides the other fields and which labels are valid. Every object ends with "explanation".
 
     "single", "multiple", "true_false", "dropdown" — list every visible option in on-screen order, with is_answer true exactly for the options to select:
-    {"question_type": "...", "options": [{"option": "<label>", "text": "<option text>", "is_answer": true | false, "reason": "<one short sentence>"}], "explanation": "..."}
+    {"question": "...", "question_type": "...", "options": [{"option": "<label>", "text": "<option text>", "is_answer": true | false, "reason": "<one short sentence>"}], "explanation": "..."}
     Labels: 1-8 or A-H as shown for "single" and "multiple"; exactly "T" and "F" for "true_false" (one of them true); for "dropdown", number the options of the open list 1, 2, 3... from the top, with exactly one true.
 
     "ranking" — every option once, in the required order, first to last:
-    {"question_type": "ranking", "items": [{"option": "<label>", "text": "<option text>"}], "order": ["<label>", ...], "explanation": "..."}
+    {"question": "...", "question_type": "ranking", "items": [{"option": "<label>", "text": "<option text>"}], "order": ["<label>", ...], "explanation": "..."}
 
     "matching" — one entry per item, each with its matching choice (a choice may be used more than once; unused choices are left out):
-    {"question_type": "matching", "matches": [{"item": "<item label>", "item_text": "...", "choice": "<choice label>", "choice_text": "...", "reason": "<one short sentence>"}], "explanation": "..."}
+    {"question": "...", "question_type": "matching", "matches": [{"item": "<item label>", "item_text": "...", "choice": "<choice label>", "choice_text": "...", "reason": "<one short sentence>"}], "explanation": "..."}
 
-    "numeric": {"question_type": "numeric", "value": "<the number as it should be entered>", "unit": "<unit or empty>", "explanation": "..."}
+    "numeric": {"question": "...", "question_type": "numeric", "value": "<the number as it should be entered>", "unit": "<unit or empty>", "explanation": "..."}
 
-    "fill_blank" — free-text blanks, in order: {"question_type": "fill_blank", "blanks": [{"blank": "1", "answer": "<text to enter>", "reason": "..."}], "explanation": "..."}
+    "fill_blank" — free-text blanks, in order: {"question": "...", "question_type": "fill_blank", "blanks": [{"blank": "1", "answer": "<text to enter>", "reason": "..."}], "explanation": "..."}
 
-    "none": {"question_type": "none", "explanation": "<why no answer>"}
+    "none": {"question": "", "question_type": "none", "explanation": "<why no answer>"}
 
     For ranking and matching, use labels 1-20 or A-T as shown; if the items or choices have no labels, number them 1, 2, 3... (or letter them A, B, C...) in on-screen order, top to bottom.
     """
@@ -58,6 +58,8 @@ enum PromptSettings {
 
     static let defaultWindowCheck = """
     [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the quiz question visible in it and work out the correct answer.
+
+    Which question: answer exactly one — the first question, in reading order (top to bottom, then left to right), whose stem and all of its options or answer fields are fully visible. Answer it even when other complete questions follow; ignore everything after it. Skip anything above it that is cut off or already finished: a previous question's options, ticks, "Correct"/"Incorrect" feedback, scores or explanations. Every option you list must belong to the chosen question; never mix in options from another question. If no question is fully visible, give no answer and say what is missing.
 
     Question type:
     - "true_false": a statement to judge as true or false (use T and F even if the screen shows True/False buttons without labels).
