@@ -24,6 +24,7 @@ final class OverlayPanelController: NSObject, NSWindowDelegate {
     private let savedTopKey = "Shortcut.ChatPanelTopLeftY"
 
     var isVisible: Bool { panel?.isVisible == true }
+    var hasKeyboardFocus: Bool { panel?.isVisible == true && panel?.isKeyWindow == true }
 
     init(model: AppModel) {
         self.model = model

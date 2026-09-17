@@ -8,6 +8,7 @@ A private, native macOS menu-bar assistant backed by the locally installed Claud
 - The main window shows the one shared conversation. Quick chat, window checks and main-window messages all go to the same Claude session, which survives relaunches. **Reset Conversation** clears the chat and starts a new session; the loaded folders stay.
 - Double-tap either Option key to open the chat overlay. Return sends, Shift-Return adds a line, Escape or a click outside closes it. Paste images with Command-V. Drag the card to move it; the position is remembered.
 - Press left and right Option together to capture the active app window and check its visible multiple-choice question. The menu-bar circle spins while Claude works, then shows `1`–`4` or `A`–`D`.
+- Shortcut's gestures are private to it: bare Option taps that form a gesture, and everything typed or pasted into the overlay (including ⌘ and ⇧), never reach the app or web page underneath. Option used with another key, click or scroll is passed through unchanged. This needs the Accessibility permission.
 - Click the menu-bar circle for the last answer and its explanation (or the error, if a check failed), plus Open Chat, Check Active Window, Settings, and Quit.
 
 ## Build and run

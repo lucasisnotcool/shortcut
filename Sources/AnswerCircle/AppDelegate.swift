@@ -26,13 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
 
         shortcutMonitor = GlobalShortcutMonitor(
-            onDoubleOption: { [weak self] in
-                Task { @MainActor in self?.showOverlay() }
-            },
-            onBothOptions: { [weak self] in
-                Task { @MainActor in self?.answerCurrentWindow() }
-            }
+            onDoubleOption: { [weak self] in self?.showOverlay() },
+            onBothOptions: { [weak self] in self?.answerCurrentWindow() }
         )
+        shortcutMonitor?.isCapturingKeyboard = { [weak overlay] in overlay?.hasKeyboardFocus ?? false }
         shortcutMonitor?.start()
 
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -92,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         // Picks up permission changes made in System Settings.
         model.refreshPermissionState()
+        shortcutMonitor?.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

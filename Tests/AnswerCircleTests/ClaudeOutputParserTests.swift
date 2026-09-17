@@ -93,3 +93,37 @@ import Testing
     let rep = try #require(NSBitmapImageRep(data: data))
     #expect(max(rep.pixelsWide, rep.pixelsHigh) <= 2000)
 }
+
+@Test func bareOptionTapsAreNeverDelivered() {
+    var filter = OptionKeyFilter()
+    for _ in 0..<2 {
+        #expect(filter.handle(.option(key: 58, isDown: true, withOtherModifiers: false)) == .swallow)
+        #expect(filter.handle(.option(key: 58, isDown: false, withOtherModifiers: false)) == .swallow)
+    }
+    // Both Option keys together.
+    #expect(filter.handle(.option(key: 58, isDown: true, withOtherModifiers: false)) == .swallow)
+    #expect(filter.handle(.option(key: 61, isDown: true, withOtherModifiers: false)) == .swallow)
+    #expect(filter.handle(.option(key: 61, isDown: false, withOtherModifiers: false)) == .swallow)
+    #expect(filter.handle(.option(key: 58, isDown: false, withOtherModifiers: false)) == .swallow)
+    #expect(filter.held.isEmpty)
+}
+
+@Test func optionChordsStillReachApps() {
+    var filter = OptionKeyFilter()
+    // Option+key: the held press is replayed before the key, the release passes.
+    #expect(filter.handle(.option(key: 61, isDown: true, withOtherModifiers: false)) == .swallow)
+    #expect(filter.handle(.otherInput) == .replayThenPass([61]))
+    #expect(filter.handle(.otherInput) == .pass)
+    #expect(filter.handle(.option(key: 61, isDown: false, withOtherModifiers: false)) == .pass)
+    // Option-click with both keys held.
+    _ = filter.handle(.option(key: 58, isDown: true, withOtherModifiers: false))
+    _ = filter.handle(.option(key: 61, isDown: true, withOtherModifiers: false))
+    #expect(filter.handle(.otherInput) == .replayThenPass([58, 61]))
+    // Command held first: Option passes straight through.
+    var chord = OptionKeyFilter()
+    #expect(chord.handle(.option(key: 58, isDown: true, withOtherModifiers: true)) == .pass)
+    #expect(chord.handle(.option(key: 58, isDown: false, withOtherModifiers: true)) == .pass)
+    // Option first, then Shift: replay before Shift.
+    #expect(chord.handle(.option(key: 58, isDown: true, withOtherModifiers: false)) == .swallow)
+    #expect(chord.handle(.otherModifier) == .replayThenPass([58]))
+}

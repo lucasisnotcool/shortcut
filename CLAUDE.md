@@ -45,6 +45,15 @@ first for what exists.
 6. The UI is monochrome; the menu-bar badge is an outlined template image.
 7. The overlay's reply area never shows a scroller (a scroller toggling at the
    height limit caused an endless layout loop with "always show scroll bars").
+8. Shortcut consumes its own keys (GlobalShortcutMonitor, an active
+   session event tap, needs Accessibility): bare Option presses are held and
+   dropped if they form a gesture, replayed before any other key, click,
+   scroll or modifier so Option chords work everywhere; while the overlay has
+   keyboard focus every modifier change is dropped, because the non-activating
+   panel leaves the app underneath active. Verified with a Safari page logging
+   key/focus/visibility/clipboard events: it saw nothing from either gesture
+   or from typing, ⌥-typing and ⌘V in the overlay. Without Accessibility it
+   falls back to listen-only monitors and logs that the keys leak.
 
 ## State on disk
 
