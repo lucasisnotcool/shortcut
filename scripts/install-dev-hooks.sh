@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Maintainer's Mac only: points git at scripts/git-hooks, so every commit,
-# pull/merge and rebase on main rebuilds dist/Shortcut.app and relaunches it
+# pull/merge and rebase on main rebuilds the app, installs it to
+# /Applications/Shortcut.app and relaunches it
 # (scripts/dev-update.sh). Undo: git config --unset core.hooksPath
 set -euo pipefail
 cd "${0:A:h:h}"

@@ -1,7 +1,9 @@
 #!/bin/zsh
-# Keeps the maintainer's dev copy (dist/Shortcut.app) in step with the code:
-# compiles while the app keeps running, then quits it, reassembles and signs
-# the bundle, and reopens it if it was running. A failed build leaves the
+# Keeps the maintainer's installed copy (/Applications/Shortcut.app) in step
+# with the code: compiles while the app keeps running, then quits it, builds
+# and signs dist/Shortcut.app, installs it to /Applications, and reopens it
+# if it was running. /Applications is where System Settings' app pickers,
+# Spotlight and Launchpad look. A failed build leaves the
 # running app alone and posts a notification.
 #
 # Run by the git hooks in scripts/git-hooks (install: scripts/install-dev-hooks.sh)
@@ -14,6 +16,7 @@ set -uo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
 BUNDLE_ID="io.github.lucasisnotcool.shortcut"
+INSTALLED="/Applications/Shortcut.app"
 LOG_DIR="$HOME/Library/Logs/Shortcut"
 LOG="$LOG_DIR/dev-update.log"
 STATE_DIR="$PROJECT_DIR/.build/dev-update"
@@ -75,12 +78,14 @@ while true; do
         exit 1
     fi
 
+    # Either copy may be running (dist/ was used before the install step existed).
+    RUNNING_PATTERN="(/Applications|$PROJECT_DIR/dist)/Shortcut.app/Contents/MacOS/Shortcut"
     WAS_RUNNING=0
-    if pgrep -qf "$PROJECT_DIR/dist/Shortcut.app/Contents/MacOS/Shortcut"; then
+    if pgrep -qf "$RUNNING_PATTERN"; then
         WAS_RUNNING=1
         osascript -e "quit app id \"$BUNDLE_ID\"" >/dev/null 2>&1
         for _ in {1..50}; do
-            pgrep -qf "$PROJECT_DIR/dist/Shortcut.app/Contents/MacOS/Shortcut" || break
+            pgrep -qf "$RUNNING_PATTERN" || break
             sleep 0.2
         done
     fi
@@ -94,8 +99,22 @@ while true; do
         echo "=== warning: not signed with Shortcut Local Signing; permissions will not carry over"
     fi
 
+    # Replace rather than merge, so no stale files survive in the bundle.
+    rm -rf "$INSTALLED.new"
+    if ! ditto "$PROJECT_DIR/dist/Shortcut.app" "$INSTALLED.new" \
+        || ! { rm -rf "$INSTALLED" && mv "$INSTALLED.new" "$INSTALLED"; }; then
+        echo "=== install to $INSTALLED failed"
+        notify "Install failed at $COMMIT" "See ~/Library/Logs/Shortcut/dev-update.log"
+        exit 1
+    fi
+    echo "=== installed $INSTALLED"
+    # Only the installed copy should answer to the bundle id (permission
+    # prompts, Launchpad, `open -b`).
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+        -u "$PROJECT_DIR/dist/Shortcut.app" >/dev/null 2>&1
+
     if (( WAS_RUNNING )); then
-        open "$PROJECT_DIR/dist/Shortcut.app"
+        open "$INSTALLED"
         echo "=== relaunched $COMMIT"
     else
         echo "=== built $COMMIT (app was not running; not opened)"

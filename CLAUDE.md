@@ -32,13 +32,15 @@ how to build and grant permissions, and how to test it with them.
 - **Dev auto-update (maintainer's Mac):** `core.hooksPath` is
   `scripts/git-hooks`, so every commit, pull/merge and rebase on `main` in
   the main checkout runs `scripts/dev-update.sh` in the background. It
-  compiles, quits the running `dist/Shortcut.app`, rebuilds and signs it,
-  and reopens it if it was running; a failed build leaves the app alone and
+  compiles, quits the running app, rebuilds and signs `dist/Shortcut.app`,
+  installs it to `/Applications/Shortcut.app` (the copy the maintainer
+  runs; System Settings' pickers only find apps there), and reopens it if it
+  was running; a failed build leaves the app alone and
   posts a notification. Log: `~/Library/Logs/Shortcut/dev-update.log`.
   Worktrees and other branches are skipped. Expect the app to restart after
   you commit; prefix a command with `SHORTCUT_DEV_UPDATE=0` to skip (e.g.
-  during QC runs). Reinstall with `scripts/install-dev-hooks.sh`. The
-  maintainer uses `dist/Shortcut.app`, not the release DMG, on this Mac.
+  during QC runs). Reinstall with `scripts/install-dev-hooks.sh`. Don't
+  install the release DMG on this Mac: it would replace the dev copy.
 - Relaunch: `osascript -e 'quit app id "io.github.lucasisnotcool.shortcut"'; open dist/Shortcut.app`.
   The bundle id is `io.github.lucasisnotcool.shortcut` (`AppIdentity`);
   it was `local.lohzh.AnswerCircle` before 1.0, and `AppIdentity` migrates
