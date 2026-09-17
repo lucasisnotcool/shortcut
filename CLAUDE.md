@@ -29,6 +29,16 @@ how to build and grant permissions, and how to test it with them.
   `~/Library/Keychains/shortcut-signing.keychain-db`). Never ship an ad-hoc
   build: macOS keys the Screen Recording and Accessibility grants on the
   signature, and an ad-hoc one changes every build.
+- **Dev auto-update (maintainer's Mac):** `core.hooksPath` is
+  `scripts/git-hooks`, so every commit, pull/merge and rebase on `main` in
+  the main checkout runs `scripts/dev-update.sh` in the background. It
+  compiles, quits the running `dist/Shortcut.app`, rebuilds and signs it,
+  and reopens it if it was running; a failed build leaves the app alone and
+  posts a notification. Log: `~/Library/Logs/Shortcut/dev-update.log`.
+  Worktrees and other branches are skipped. Expect the app to restart after
+  you commit; prefix a command with `SHORTCUT_DEV_UPDATE=0` to skip (e.g.
+  during QC runs). Reinstall with `scripts/install-dev-hooks.sh`. The
+  maintainer uses `dist/Shortcut.app`, not the release DMG, on this Mac.
 - Relaunch: `osascript -e 'quit app id "io.github.lucasisnotcool.shortcut"'; open dist/Shortcut.app`.
   The bundle id is `io.github.lucasisnotcool.shortcut` (`AppIdentity`);
   it was `local.lohzh.AnswerCircle` before 1.0, and `AppIdentity` migrates

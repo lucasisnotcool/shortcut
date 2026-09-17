@@ -35,6 +35,13 @@ permissions and has to grant them again. So:
 - Moving to a Developer ID later also changes the requirement. Announce it
   in the release notes, since users will re-grant permissions once.
 
+## Your own copy
+
+On the maintainer's Mac, run `scripts/install-dev-hooks.sh` once. After that
+every commit, pull and rebase on `main` rebuilds `dist/Shortcut.app` and
+relaunches it (details in `scripts/dev-update.sh`). Use that copy, not the
+DMG, so there is only one Shortcut on the Mac.
+
 ## Cutting a release
 
 ```sh

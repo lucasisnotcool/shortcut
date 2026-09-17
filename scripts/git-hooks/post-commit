@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Rebuilds and relaunches the dev copy of Shortcut (see scripts/dev-update.sh).
+exec "$(git rev-parse --show-toplevel)/scripts/dev-update.sh"
