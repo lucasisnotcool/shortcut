@@ -226,6 +226,7 @@ private struct ChatPane: View {
     @ObservedObject var model: AppModel
     @State private var editorHeight: CGFloat = 20
     @State private var confirmingReset = false
+    @State private var editingPrompts = false
 
     private var canSend: Bool {
         !model.isSending &&
@@ -264,6 +265,9 @@ private struct ChatPane: View {
                     .help("Reference folders are part of every request and are kept when the conversation is reset.")
             }
             Spacer()
+            Button("Prompts…", systemImage: "text.alignleft") { editingPrompts = true }
+                .help("See and edit what Shortcut sends to Claude")
+                .sheet(isPresented: $editingPrompts) { PromptEditorView(model: model) }
             Button("Reset Conversation", systemImage: "arrow.counterclockwise") { confirmingReset = true }
                 .disabled(model.isBusy || model.messages.isEmpty)
                 .confirmationDialog("Clear the conversation?", isPresented: $confirmingReset) {

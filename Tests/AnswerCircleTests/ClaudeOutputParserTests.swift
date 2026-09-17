@@ -127,3 +127,20 @@ import Testing
     #expect(chord.handle(.option(key: 58, isDown: true, withOtherModifiers: false)) == .swallow)
     #expect(chord.handle(.otherModifier) == .replayThenPass([58]))
 }
+
+@Test func promptEditsPersistAndRestore() {
+    let defaults = UserDefaults.standard
+    let saved = (defaults.object(forKey: "Shortcut.Prompt.Instructions"), defaults.object(forKey: "Shortcut.Prompt.WindowCheck"))
+    defer {
+        defaults.set(saved.0, forKey: "Shortcut.Prompt.Instructions")
+        defaults.set(saved.1, forKey: "Shortcut.Prompt.WindowCheck")
+    }
+    PromptSettings.instructions = "Custom instructions."
+    #expect(PromptSettings.instructions == "Custom instructions.")
+    #expect(PromptSettings.isInstructionsCustomized)
+    // Setting the default text (or blank) goes back to following the default.
+    PromptSettings.instructions = PromptSettings.defaultInstructions
+    #expect(!PromptSettings.isInstructionsCustomized)
+    PromptSettings.windowCheck = "   "
+    #expect(PromptSettings.windowCheck == PromptSettings.defaultWindowCheck)
+}

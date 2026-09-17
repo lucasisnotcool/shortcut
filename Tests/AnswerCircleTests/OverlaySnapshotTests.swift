@@ -90,3 +90,21 @@ import Testing
     try #require(rep.representation(using: .png, properties: [:]))
         .write(to: URL(fileURLWithPath: directory).appendingPathComponent("main-window.png"))
 }
+
+@Test @MainActor func renderPromptEditorSnapshot() throws {
+    guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
+    _ = NSApplication.shared
+    let model = AppModel(conversation: ConversationStore(directory: nil))
+    let hosting = NSHostingView(rootView: PromptEditorView(model: model))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
+                          styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = hosting
+    for _ in 0..<5 {
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    }
+    let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+    try #require(rep.representation(using: .png, properties: [:]))
+        .write(to: URL(fileURLWithPath: directory).appendingPathComponent("prompt-editor.png"))
+}

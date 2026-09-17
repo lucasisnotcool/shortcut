@@ -40,7 +40,12 @@ first for what exists.
    and no `--json-schema`; either difference breaks the cache and adds a turn.
    Images go inline via `--input-format stream-json`.
 4. Source priority in the prompt: documents → on-demand files → own knowledge
-   → web search. Window checks may answer `NONE`.
+   → web search. Window checks may answer `NONE`. The instructions and the
+   window-check prompt live in `PromptSettings` (defaults there, user edits in
+   `Shortcut.Prompt.*` defaults, editable via Prompts… in the main window);
+   the reply format and documents block are not editable. Keep the default
+   instructions byte-stable unless the change is intended: any edit reloads
+   the cache.
 5. The model is pinned to `opus[1m]`.
 6. The UI is monochrome; the menu-bar badge is an outlined template image.
 7. The overlay's reply area never shows a scroller (a scroller toggling at the
