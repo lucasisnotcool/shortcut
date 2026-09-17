@@ -4,13 +4,12 @@ import os
 
 let appLog = Logger(subsystem: AppIdentity.bundleID, category: "app")
 
-actor ClaudeService {
+actor ClaudeService: CLIModelRunner {
     private static let sessionIDKey = "AnswerCircle.ClaudeSessionID"
     private static let sessionStartedKey = "AnswerCircle.ClaudeSessionStarted"
     private static let contextSignatureKey = "AnswerCircle.ClaudeContextSignature"
     private static let requestTimeout: TimeInterval = 240
-    static let model = "opus[1m]"
-    static let modelDisplayName = "Opus · 1M context"
+    static let defaultModel = "opus[1m]"
     /// Identical for chat and window checks: a different tool list would
     /// invalidate the prompt cache that holds the reference documents.
     private static let tools = ["Read", "WebSearch", "WebFetch"]
@@ -98,24 +97,12 @@ actor ClaudeService {
         return nil
     }
 
-    /// `prompt` overrides the text sent to Claude (the message text is what the teacher sees).
-    /// `prompt` overrides the text sent to Claude (the message text is what the teacher sees).
-    func chat(message: ChatMessage, context: ContextSnapshot, prompt: String? = nil) async throws -> String {
-        let images = try message.images.map(ClaudeImage.init(image:))
-        return try await serialized {
-            let output = try await self.runClaude(text: prompt ?? message.text, images: images, context: context)
+    /// One turn in the shared session; returns the reply text. The router
+    /// parses window-check answers from it.
+    func chat(text: String, images: [ClaudeImage], context: ContextSnapshot, model: String) async throws -> String {
+        try await serialized {
+            let output = try await self.runClaude(text: text, images: images, context: context, model: model)
             return try ClaudeOutputParser.chatText(from: output)
-        }
-    }
-
-    func answerQuestion(screenshot: URL, context: ContextSnapshot) async throws -> WindowAnswer {
-        // JSON is requested in the reply rather than via --json-schema: the schema
-        // option adds a tool, which costs an extra turn and breaks the prompt cache.
-        let prompt = PromptSettings.windowCheck + "\n\n" + PromptSettings.windowCheckReplyFormat
-        let image = try ClaudeImage(fileURL: screenshot)
-        return try await serialized {
-            let output = try await self.runClaude(text: prompt, images: [image], context: context)
-            return try ClaudeOutputParser.windowAnswer(from: output)
         }
     }
 
@@ -162,12 +149,13 @@ actor ClaudeService {
 
     /// Runs one turn in the shared session, recovering from the two session
     /// states that would otherwise fail every future request.
-    private func runClaude(text: String, images: [ClaudeImage], context: ContextSnapshot) async throws -> Data {
+    private func runClaude(text: String, images: [ClaudeImage], context: ContextSnapshot, model: String) async throws -> Data {
         let systemPromptURL = try writeSystemPrompt(context)
         let message = try Self.userMessageLine(text: text, images: images)
         for attempt in 0..<2 {
             do {
-                let output = try await launchClaude(message: message, systemPromptURL: systemPromptURL, directories: context.readableDirectories)
+                let output = try await launchClaude(message: message, systemPromptURL: systemPromptURL,
+                                                   directories: context.readableDirectories, model: model)
                 markSessionStarted()
                 return output
             } catch AppError.processFailed(let detail) where attempt == 0 {
@@ -220,7 +208,7 @@ actor ClaudeService {
         return data
     }
 
-    private func launchClaude(message: Data, systemPromptURL: URL, directories: [String]) async throws -> Data {
+    private func launchClaude(message: Data, systemPromptURL: URL, directories: [String], model: String) async throws -> Data {
         guard let executable = Self.locateExecutable() else { throw AppError.claudeNotFound }
 
         var arguments = [
@@ -228,7 +216,7 @@ actor ClaudeService {
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
-            "--model", Self.model,
+            "--model", model.isEmpty ? Self.defaultModel : model,
             "--permission-mode", "dontAsk",
             "--tools", Self.tools.joined(separator: ","),
             "--allowedTools", Self.tools.joined(separator: ","),
@@ -327,7 +315,7 @@ struct ClaudeAccount: Equatable {
 }
 
 /// An image ready to send inline, within the API's 5 MB per-image limit.
-struct ClaudeImage {
+struct ClaudeImage: Equatable {
     let data: Data
     let mediaType: String
 
@@ -395,6 +383,12 @@ enum ClaudeOutputParser {
         throw AppError.invalidResponse("Claude returned no readable response.")
     }
 
+    /// A window-check reply given as plain text (API models, or the CLI's `result`).
+    static func windowAnswer(fromText text: String) throws -> WindowAnswer {
+        let envelope = try JSONSerialization.data(withJSONObject: ["result": text])
+        return try windowAnswer(from: envelope)
+    }
+
     static func windowAnswer(from data: Data) throws -> WindowAnswer {
         let root = try jsonObject(from: data)
         if let object = root["structured_output"] as? [String: Any],
@@ -414,7 +408,7 @@ enum ClaudeOutputParser {
         if root["is_error"] as? Bool == true {
             throw AppError.processFailed(errorText(from: data) ?? "Claude reported an error.")
         }
-        throw AppError.invalidResponse("Claude did not return a structured answer.")
+        throw AppError.invalidResponse("The model did not return a structured answer.")
     }
 
     /// Turns, cache hits and cost, for the log.
@@ -437,7 +431,7 @@ enum ClaudeOutputParser {
 
     private static func jsonObject(from data: Data) throws -> [String: Any] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AppError.invalidResponse("Claude returned malformed JSON.")
+            throw AppError.invalidResponse("The model returned malformed JSON.")
         }
         return object
     }
@@ -452,7 +446,7 @@ enum ClaudeOutputParser {
             .lowercased().replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
         let kind = rawType.flatMap(AnswerKind.init(rawValue:))
         if rawType != nil, kind == nil {
-            throw invalid("Claude returned an unknown question type: \(rawType ?? "")")
+            throw invalid("The model returned an unknown question type: \(rawType ?? "")")
         }
 
         var answer = try parsedAnswer(object, kind: kind, explanation)
@@ -478,7 +472,7 @@ enum ClaudeOutputParser {
             if object["options"] != nil { return try choiceAnswer(object, kind: choice, explanation) }
             return try legacy(object, kind: choice, explanation)
         case nil:
-            if object["options"] != nil { throw invalid("Claude listed options without a question type.") }
+            if object["options"] != nil { throw invalid("The model listed options without a question type.") }
             return try legacy(object, kind: nil, explanation)
         }
     }
@@ -494,13 +488,13 @@ enum ClaudeOutputParser {
     /// single, multiple, true_false, dropdown: a verdict for every option.
     private static func choiceAnswer(_ object: [String: Any], kind: AnswerKind, _ explanation: String) throws -> WindowAnswer {
         guard let entries = object["options"] as? [[String: Any]] else {
-            throw invalid("Claude returned options in an unexpected shape.")
+            throw invalid("The model returned options in an unexpected shape.")
         }
         var selected: [String] = []
         var details: [String] = []
         for entry in entries {
             guard let raw = string(entry["option"]), let isAnswer = entry["is_answer"] as? Bool else {
-                throw invalid("Claude returned an option without a verdict.")
+                throw invalid("The model returned an option without a verdict.")
             }
             let label = try normalizedLabel(raw, for: kind)
             if isAnswer { selected.append(label) }
@@ -511,9 +505,9 @@ enum ClaudeOutputParser {
         var finalKind = kind
         switch kind {
         case .trueFalse where values.count > 1:
-            throw invalid("Claude marked both True and False as correct.")
+            throw invalid("The model marked both True and False as correct.")
         case .dropdown where values.count > 1:
-            throw invalid("Claude picked \(values.count) options in a single dropdown.")
+            throw invalid("The model picked \(values.count) options in a single dropdown.")
         case .single where values.count > 1:
             // Several correct options make it a multiple-response question.
             appLog.notice("Single-answer question came back with \(values.count) answers; treating as multiple")
@@ -528,15 +522,15 @@ enum ClaudeOutputParser {
     /// {"items": [{"option", "text"}], "order": [labels first to last]}
     private static func ranking(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
         guard let rawOrder = object["order"] as? [Any], !rawOrder.isEmpty else {
-            throw invalid("Claude gave a ranking without an order.")
+            throw invalid("The model gave a ranking without an order.")
         }
         let order = try rawOrder.map { value -> String in
-            guard let raw = string(value) else { throw invalid("Claude gave an unreadable ranking entry.") }
+            guard let raw = string(value) else { throw invalid("The model gave an unreadable ranking entry.") }
             return try normalizedLabel(raw, for: .ranking)
         }
         try requireOneFamily(order, for: .ranking)
         guard Set(order).count == order.count else {
-            throw invalid("Claude's ranking repeats an option: \(order.joined(separator: " "))")
+            throw invalid("The model's ranking repeats an option: \(order.joined(separator: " "))")
         }
         var texts: [String: String] = [:]
         if let items = object["items"] as? [[String: Any]] {
@@ -545,7 +539,7 @@ enum ClaudeOutputParser {
                 texts[try normalizedLabel(raw, for: .ranking)] = string(item["text"]) ?? ""
             }
             if !texts.isEmpty, Set(texts.keys) != Set(order) {
-                throw invalid("Claude's ranking does not use every listed option exactly once.")
+                throw invalid("The model's ranking does not use every listed option exactly once.")
             }
         }
         let details = order.enumerated().map { index, label in
@@ -558,12 +552,12 @@ enum ClaudeOutputParser {
     /// {"matches": [{"item", "item_text", "choice", "choice_text", "reason"}]}
     private static func matching(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
         guard let entries = object["matches"] as? [[String: Any]], !entries.isEmpty else {
-            throw invalid("Claude gave a matching answer without matches.")
+            throw invalid("The model gave a matching answer without matches.")
         }
         var pairs: [(item: String, choice: String, line: String)] = []
         for entry in entries {
             guard let rawItem = string(entry["item"]), let rawChoice = string(entry["choice"]) else {
-                throw invalid("Claude left an item unmatched.")
+                throw invalid("The model left an item unmatched.")
             }
             let item = try normalizedLabel(rawItem, for: .matching)
             let choice = try normalizedLabel(rawChoice, for: .matching)
@@ -574,7 +568,7 @@ enum ClaudeOutputParser {
         }
         let items = pairs.map(\.item)
         guard Set(items).count == items.count else {
-            throw invalid("Claude matched the same item twice.")
+            throw invalid("The model matched the same item twice.")
         }
         try requireOneFamily(items, for: .matching)
         try requireOneFamily(pairs.map(\.choice), for: .matching)
@@ -587,7 +581,7 @@ enum ClaudeOutputParser {
     private static func numeric(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
         guard let value = string(object["value"])?.trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty, value.count <= 40 else {
-            throw invalid("Claude gave a number answer without a usable value.")
+            throw invalid("The model gave a number answer without a usable value.")
         }
         let unit = string(object["unit"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let details = ["**\(value)**\(unit.isEmpty ? "" : " \(unit)")"]
@@ -597,13 +591,13 @@ enum ClaudeOutputParser {
     /// {"blanks": [{"blank": "1", "answer": "...", "reason": "..."}]}
     private static func fillBlank(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
         guard let entries = object["blanks"] as? [[String: Any]], !entries.isEmpty else {
-            throw invalid("Claude gave a fill-in-the-blank answer without blanks.")
+            throw invalid("The model gave a fill-in-the-blank answer without blanks.")
         }
         var values: [String] = []
         var details: [String] = []
         for (index, entry) in entries.enumerated() {
             guard let text = string(entry["answer"])?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-                throw invalid("Claude left a blank empty.")
+                throw invalid("The model left a blank empty.")
             }
             let name = string(entry["blank"]) ?? String(index + 1)
             let reason = string(entry["reason"]).map { " — \($0)" } ?? ""
@@ -642,13 +636,13 @@ enum ClaudeOutputParser {
             if label == "TRUE" { label = "T" }
             if label == "FALSE" { label = "F" }
             guard label == "T" || label == "F" else {
-                throw invalid("Claude returned \(raw) for a true/false question.")
+                throw invalid("The model returned \(raw) for a true/false question.")
             }
             return label
         }
         let allowed = AnswerLabels.allowed(for: kind)
         guard allowed.numbers.contains(label) || allowed.letters.contains(label) else {
-            throw invalid("Claude returned an unsupported option: \(raw)")
+            throw invalid("The model returned an unsupported option: \(raw)")
         }
         return label
     }
@@ -656,7 +650,7 @@ enum ClaudeOutputParser {
     private static func requireOneFamily(_ labels: [String], for kind: AnswerKind) throws {
         let allowed = AnswerLabels.allowed(for: kind)
         guard labels.allSatisfy(allowed.numbers.contains) || labels.allSatisfy(allowed.letters.contains) else {
-            throw invalid("Claude mixed numbered and lettered options: \(labels.joined(separator: ", "))")
+            throw invalid("The model mixed numbered and lettered options: \(labels.joined(separator: ", "))")
         }
     }
 

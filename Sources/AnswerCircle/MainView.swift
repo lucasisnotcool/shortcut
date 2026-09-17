@@ -16,6 +16,7 @@ struct MainView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(.primary)
+        .sheet(isPresented: $model.isShowingModels) { ModelsView(model: model) }
     }
 }
 
@@ -76,8 +77,12 @@ private struct ContextSidebar: View {
                 .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Shortcut").font(.title3.weight(.semibold))
-                Text("Claude · \(ClaudeService.modelDisplayName)").font(.caption).foregroundStyle(.secondary)
-                if let account = model.claudeAccount {
+                Button { model.isShowingModels = true } label: {
+                    Text(modelSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help("Models, in the order they are tried. Click to change.")
+                if model.readyModels.first?.provider == .claudeCLI, let account = model.claudeAccount {
                     Text(account.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         .help("Usage beyond the plan's limits uses your Claude usage credits, if enabled in claude.ai Settings › Usage.")
                 }
@@ -85,9 +90,16 @@ private struct ContextSidebar: View {
         }
     }
 
+    /// "Opus · 1M context · Claude Code +2 fallbacks"
+    private var modelSummary: String {
+        let ready = model.readyModels
+        guard let first = ready.first else { return "No model ready — set one up" }
+        return first.label + (ready.count > 1 ? " +\(ready.count - 1) fallback\(ready.count == 2 ? "" : "s")" : "")
+    }
+
     private var permissionStrip: some View {
         HStack(spacing: 6) {
-            StatusPill(title: "Claude CLI", ready: model.claudeExecutableFound, action: nil)
+            StatusPill(title: "Models", ready: model.hasReadyModel) { model.isShowingModels = true }
             StatusPill(title: "Accessibility", ready: model.accessibilityGranted) {
                 model.requestAccessibilityPermission()
             }
@@ -103,7 +115,7 @@ private struct ContextSidebar: View {
             VStack(spacing: 8) {
                 Image(systemName: "folder.badge.plus").font(.system(size: 26)).foregroundStyle(.secondary)
                 Text("Add a course folder").font(.callout.weight(.medium))
-                Text("Every file inside is loaded into Claude's context, including subfolders.")
+                Text("Every file inside is loaded into the model's context, including subfolders.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Button("Choose Folder…", action: chooseFolders).buttonStyle(.bordered)
             }
@@ -146,7 +158,7 @@ private struct ContextSidebar: View {
                 Button("Verify") { model.verifyContext() }
                     .controlSize(.small)
                     .disabled(model.isBusy || model.isIndexing)
-                    .help("Ask Claude which documents it can see")
+                    .help("Ask the model which documents it can see")
             }
             ProgressView(value: budgetFraction)
                 .tint(.secondary)
@@ -224,8 +236,8 @@ private struct FileRow: View {
     private var helpText: String {
         switch file.status {
         case .inline(let tokens): return "In context (≈\(tokens) tokens)"
-        case .onDemand(let reason): return "Claude opens this when needed: \(reason)"
-        case .unsupported(let reason): return "Not available to Claude: \(reason)"
+        case .onDemand(let reason): return "The model opens this when needed: \(reason)"
+        case .unsupported(let reason): return "Not available to the model: \(reason)"
         case .failed(let reason): return "Could not be read: \(reason)"
         }
     }
@@ -276,15 +288,17 @@ private struct ChatPane: View {
                     .help("Reference folders are part of every request and are kept when the conversation is reset.")
             }
             Spacer()
+            Button("Models…", systemImage: "cpu") { model.isShowingModels = true }
+                .help("Choose and rank the models that answer")
             Button("Prompts…", systemImage: "text.alignleft") { editingPrompts = true }
-                .help("See and edit what Shortcut sends to Claude")
+                .help("See and edit what Shortcut sends to the model")
                 .sheet(isPresented: $editingPrompts) { PromptEditorView(model: model) }
             Button("Reset Conversation", systemImage: "arrow.counterclockwise") { confirmingReset = true }
                 .disabled(model.isBusy || model.messages.isEmpty)
                 .confirmationDialog("Clear the conversation?", isPresented: $confirmingReset) {
                     Button("Reset Conversation", role: .destructive) { model.resetSession() }
                 } message: {
-                    Text("Starts a new Claude session. Your reference folders stay loaded and are included in the next request.")
+                    Text("Starts a new session. Your reference folders stay loaded and are included in the next request.")
                 }
         }
         .padding(.horizontal, 20)
@@ -368,7 +382,7 @@ private struct ChatPane: View {
             HStack(alignment: .bottom, spacing: 10) {
                 ZStack(alignment: .topLeading) {
                     if model.draft.isEmpty {
-                        Text("Message Claude — Return to send, ⌘V to paste images")
+                        Text("Message — Return to send, ⌘V to paste images")
                             .font(.system(size: 14))
                             .foregroundStyle(.tertiary)
                             .allowsHitTesting(false)
@@ -408,11 +422,13 @@ private struct ChatPane: View {
 
 // MARK: - Setup
 
-/// Shown until the CLI, the account and both permissions are ready.
+/// Shown until a model and both permissions are ready.
 private struct SetupChecklist: View {
     @ObservedObject var model: AppModel
 
     private var signedIn: Bool { model.claudeAccount?.usesSubscription == true }
+    /// Claude Code isn't needed once another model is ready.
+    private var readyAPIModel: ModelEntry? { model.readyModels.first { $0.provider != .claudeCLI } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -426,21 +442,31 @@ private struct SetupChecklist: View {
                 .buttonStyle(.borderless)
                 .help("Check again")
             }
-            SetupStep(number: 1, title: "Install Claude Code",
-                      detail: "Shortcut runs the Claude CLI on your Mac.",
-                      done: model.claudeExecutableFound,
-                      actionTitle: "Install…", action: SetupAssistant.installClaude)
-            SetupStep(number: 2, title: "Sign in to Claude",
-                      detail: model.claudeAccount.map { signedIn ? $0.summary : "\($0.summary). A claude.ai Pro or Max plan is required." }
-                          ?? "Uses your claude.ai subscription.",
-                      done: signedIn,
-                      actionTitle: "Sign In…", action: SetupAssistant.signInToClaude)
-                .disabled(!model.claudeExecutableFound)
-            SetupStep(number: 3, title: "Allow Accessibility",
+            if let readyAPIModel {
+                SetupStep(number: 1, title: "Model ready",
+                          detail: "\(readyAPIModel.label). Claude Code is optional.",
+                          done: true, actionTitle: "", action: {})
+            } else if model.usesClaudeCLI {
+                SetupStep(number: 1, title: "Install Claude Code",
+                          detail: "Runs the Claude CLI on your Mac. Or use an API key instead: Models…",
+                          done: model.claudeExecutableFound,
+                          actionTitle: "Install…", action: SetupAssistant.installClaude)
+                SetupStep(number: 2, title: "Sign in to Claude",
+                          detail: model.claudeAccount.map { signedIn ? $0.summary : "\($0.summary). A claude.ai Pro or Max plan is required." }
+                              ?? "Uses your claude.ai subscription.",
+                          done: signedIn,
+                          actionTitle: "Sign In…", action: SetupAssistant.signInToClaude)
+                    .disabled(!model.claudeExecutableFound)
+            } else {
+                SetupStep(number: 1, title: "Set up a model",
+                          detail: "Add an API key, a local Ollama model, or Claude Code.",
+                          done: false, actionTitle: "Models…", action: { model.isShowingModels = true })
+            }
+            SetupStep(number: stepOffset + 1, title: "Allow Accessibility",
                       detail: "For the Option-key gestures.",
                       done: model.accessibilityGranted,
                       actionTitle: "Allow…", action: model.requestAccessibilityPermission)
-            SetupStep(number: 4, title: "Allow Screen Recording",
+            SetupStep(number: stepOffset + 2, title: "Allow Screen Recording",
                       detail: "To read the question in the active window. macOS may ask to reopen Shortcut.",
                       done: model.screenRecordingGranted,
                       actionTitle: "Allow…", action: model.requestScreenRecordingPermission)
@@ -448,6 +474,8 @@ private struct SetupChecklist: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
     }
+
+    private var stepOffset: Int { readyAPIModel == nil && model.usesClaudeCLI ? 2 : 1 }
 }
 
 private struct SetupStep: View {

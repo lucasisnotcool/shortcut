@@ -19,8 +19,8 @@ enum SetupAssistant {
         alert.informativeText = """
         Shortcut is for teaching staff: it checks the question you are presenting against your own course materials.
 
-        • It uses your own Claude subscription through the Claude CLI.
-        • Your reference folders, screenshots of the active window, pasted images and the chat are sent to Anthropic.
+        • It uses your own Claude subscription through the Claude CLI, or API keys you add under Models….
+        • Your reference folders, screenshots of the active window, pasted images and the chat are sent to the model provider you choose (Anthropic by default); local models such as Ollama keep them on your Mac.
         • Don't use it to answer an assessment you are taking.
         """
         alert.addButton(withTitle: "Continue")

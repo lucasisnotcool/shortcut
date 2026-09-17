@@ -133,7 +133,11 @@ Open it from the menu (**Shortcut Settings…**). On the left:
 On the right is the one shared conversation: every quick-chat question and
 window check, with full explanations. **Reset Conversation** starts a new
 one and keeps your folders. **Prompts…** shows exactly what is sent to
-Claude and lets you adjust the instructions.
+the model and lets you adjust the instructions. **Models…** holds the
+ranked model list: Claude Code, API keys for Anthropic, OpenAI, Gemini,
+OpenRouter and others, or a local Ollama or LM Studio model. The first
+available model answers and the next one takes over if it fails; each reply
+names the model that wrote it.
 
 ![Main window with the Demo Course folder loaded and the shared conversation](images/main-window.png)
 
@@ -142,11 +146,12 @@ Claude and lets you adjust the instructions.
 ## Good to know
 
 - Shortcut is personal-use software: you build it on your own Mac and it
-  uses your own claude.ai plan. See the [README](../README.md) to set it up,
+  uses your own claude.ai plan or API keys. See the [README](../README.md) to set it up,
   or ask a coding agent to follow [AGENTS.md](../AGENTS.md).
 - A window check sends a screenshot of **whatever window is in front**.
   Make sure that is the quiz, not your email or notes.
-- Your course files, screenshots and chat are sent to Anthropic's Claude.
-  Only add material you are comfortable sharing that way.
+- Your course files, screenshots and chat are sent to the model provider
+  that answers (Anthropic's Claude by default; local models stay on your
+  Mac). Only add material you are comfortable sharing that way.
 - The demo material and the quiz viewer used for these screenshots are in
   [`docs/demo`](demo/). You can use them to test your own setup.

@@ -97,7 +97,7 @@ struct AnswerTag: Codable, Equatable {
     }
 
     private var kindDescription: String {
-        if isNoAnswer { return "Claude could not confirm a question and answer" }
+        if isNoAnswer { return "The model could not confirm a question and answer" }
         switch kind {
         case .single: return "From the active window"
         case .multiple:

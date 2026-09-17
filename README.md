@@ -1,6 +1,6 @@
 # Shortcut
 
-A private, native macOS menu-bar assistant backed by the locally installed Claude CLI. While you present a quiz, it reads the question on screen, answers it from your course files, and shows the answer to you alone in the menu bar.
+A private, native macOS menu-bar assistant backed by the locally installed Claude CLI, or by your own API keys (Anthropic, OpenAI, Gemini, OpenRouter and more) and local models (Ollama, LM Studio). While you present a quiz, it reads the question on screen, answers it from your course files, and shows the answer to you alone in the menu bar.
 
 ![A demo quiz question on the left and Shortcut's answer, B, with its reasoning on the right](docs/images/check-single.png)
 
@@ -30,12 +30,13 @@ A private, native macOS menu-bar assistant backed by the locally installed Claud
 
   Claude judges every option against the question as worded (so "Which are NOT…" is handled per option, and a multiple-response question can have a single answer), bases the answer on the course files, then its own knowledge, then web search, and ignores what is already ticked, highlighted, ordered or connected on screen. The chat and the badge menu show the working: ✓/✗ per option, the ranked list, the pairs, or the text per blank.
 - Shortcut's gestures are private to it: bare Option taps that form a gesture, and everything typed or pasted into the overlay (including ⌘ and ⇧), never reach the app or web page underneath. Option used with another key, click or scroll is passed through unchanged. This needs the Accessibility permission.
+- **Models…** (chat header in the main window, or click the model name in the sidebar) holds the ranked model list. The first available model answers; if it fails (rate limit, outage, timeout, rejected key, context too long) the next one takes over, and the reply is labelled with the model that wrote it. Drag to reorder; new models go to the bottom; switch one off to skip it. Each model has its provider, model id (**Fetch List** asks the provider), server address, API key (kept in the login keychain, shared by a provider's models), image input, Read tool, web search, context window, reply length, temperature and extra headers, plus **Test Connection**, which sends a one-word request with a small image. Window checks and pasted images skip models without image input. Providers: Claude Code (subscription), Anthropic, OpenAI, Google Gemini, OpenRouter, xAI, Mistral, Groq, DeepSeek, Azure OpenAI, Ollama, LM Studio, and any OpenAI-compatible server.
 - **Prompts…** (chat header in the main window) shows what is sent to Claude and lets you edit the Session Instructions (system prompt, after the reference documents) and the Window Check prompt. Edits apply from the next request without a reset; the JSON reply format and the generated documents stay fixed. **Restore Default** undoes an edit. The exact system prompt of the latest request is at `~/Library/Application Support/Shortcut/system-prompt.md`.
 - Click the menu-bar circle for the last answer and its explanation (or the error, if a check failed), plus Open Chat, Check Active Window, Settings, Check for Updates, and Quit.
 
 ## Install
 
-**[Download the latest DMG](https://github.com/lucasisnotcool/shortcut/releases/latest)**, drag Shortcut to Applications, and follow **[INSTALL.md](INSTALL.md)**. You need macOS 14 or later and a claude.ai Pro or Max plan. The app isn't notarized, so the first launch needs **Open Anyway** in Privacy & Security. After that, a **Finish setting up** checklist in the app installs and signs in to Claude Code and asks for the two permissions.
+**[Download the latest DMG](https://github.com/lucasisnotcool/shortcut/releases/latest)**, drag Shortcut to Applications, and follow **[INSTALL.md](INSTALL.md)**. You need macOS 14 or later and either a claude.ai Pro or Max plan or an API key (a local Ollama or LM Studio model also works). The app isn't notarized, so the first launch needs **Open Anyway** in Privacy & Security. After that, a **Finish setting up** checklist in the app installs and signs in to Claude Code (or points you to **Models…** for an API key) and asks for the two permissions.
 
 Shortcut is free, personal-use software with no support. It is meant for teaching staff checking questions they present, not for answering an assessment you are taking.
 
@@ -63,19 +64,21 @@ Run tests with:
 swift test
 ```
 
-## How context reaches Claude
+## How context reaches the model
 
-Following Anthropic's guidance (a knowledge base under about 200k tokens can go straight into the prompt), extracted text from PDFs, Word, PowerPoint, notebooks, Markdown and code is written into the system prompt as `<documents>`, ahead of the instructions, and passed with `--system-prompt-file`. The prompt is byte-stable, so it stays in Claude's prompt cache across questions and app relaunches; only the first request after a change (or after the cache expires) pays to load it. Chat and window checks use the same tool set (`Read`, `WebSearch`, `WebFetch`) and send images inline, so a typical answer takes a single model turn. Claude is told to answer from the documents first, then its own knowledge, and to search the web only when neither covers the question. The model is pinned to `opus[1m]`.
+Following Anthropic's guidance (a knowledge base under about 200k tokens can go straight into the prompt), extracted text from PDFs, Word, PowerPoint, notebooks, Markdown and code is written into the system prompt as `<documents>`, ahead of the instructions, and passed with `--system-prompt-file`. The prompt is byte-stable, so it stays in Claude's prompt cache across questions and app relaunches; only the first request after a change (or after the cache expires) pays to load it. Chat and window checks use the same tool set (`Read`, `WebSearch`, `WebFetch`) and send images inline, so a typical answer takes a single model turn. Claude is told to answer from the documents first, then its own knowledge, and to search the web only when neither covers the question. The default model is Claude Code with `opus[1m]`.
+
+API models get the same system prompt (documents first, then the instructions, then a short note on which tools this model has), with prompt caching where the provider offers it (Anthropic's `cache_control`; OpenAI, Gemini and others cache automatically). They are stateless, so Shortcut replays the saved conversation as text; only the current message carries its images. With a context window set, the oldest turns are dropped to fit, and a model too small for the documents is skipped. On-demand files are opened through a read-only `Read` function tool limited to the reference folders (scanned PDF pages come back as images); models that reject tools are retried without them. Web search uses Anthropic's web search tool, Gemini's Google Search grounding, or OpenRouter's web plugin, when switched on. Ollama is called through its native `/api/chat` so the context size (`num_ctx`) can be set per request. When Claude Code answers after other models did, the turns it missed are included in its message.
 
 ## Billing
 
-Shortcut runs the Claude CLI signed in with your claude.ai account (the main window shows the plan and email under the model). Requests count toward the plan's limits; with usage credits enabled in claude.ai **Settings › Usage**, they continue past those limits at API rates, up to your monthly cap. Shortcut removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and the Bedrock/Vertex/Foundry switches from the CLI's environment so requests always go through the subscription.
+With the Claude Code model, Shortcut runs the Claude CLI signed in with your claude.ai account (the main window shows the plan and email under the model). Requests count toward the plan's limits; with usage credits enabled in claude.ai **Settings › Usage**, they continue past those limits at API rates, up to your monthly cap. Shortcut removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and the Bedrock/Vertex/Foundry switches from the CLI's environment so requests always go through the subscription. API models bill the provider account whose key you added; Shortcut logs token usage for each reply but does not track spend.
 
 ## Privacy and security
 
-Claude runs with only `Read`, `WebSearch` and `WebFetch`, read access limited to the reference folders (`--add-dir`), and customizations disabled (`--safe-mode`). The contents of the reference folders, pasted images, the conversation and active-window screenshots are sent to Claude. Captures are deleted after each request; the conversation (with downscaled images) is kept in `~/Library/Application Support/Shortcut/Conversation` until you reset it.
+Claude Code runs with only `Read`, `WebSearch` and `WebFetch`, read access limited to the reference folders (`--add-dir`), and customizations disabled (`--safe-mode`). The contents of the reference folders, pasted images, the conversation and active-window screenshots are sent to the model that answers: to Anthropic for Claude Code, and to the provider you configured for an API model (fallbacks included). Local models keep them on your Mac. API keys are stored in the login keychain (service `io.github.lucasisnotcool.shortcut.api-keys`), never in preferences. Captures are deleted after each request; the conversation (with downscaled images) is kept in `~/Library/Application Support/Shortcut/Conversation` until you reset it.
 
-Apart from Claude, Shortcut contacts only GitHub's public releases API, once a day, to check for a new version (turn off **Check Automatically** in the menu-bar menu). It sends no information about you.
+Apart from the models you configure, Shortcut contacts only GitHub's public releases API, once a day, to check for a new version (turn off **Check Automatically** in the menu-bar menu). It sends no information about you.
 
 ## License
 

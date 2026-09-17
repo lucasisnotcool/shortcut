@@ -305,5 +305,5 @@ private func parse(_ json: String) throws -> WindowAnswer {
     #expect(answer.tag.subtitle == "Q4 What is the boiling point of water at sea le… · From the active window")
     let none = try parse(#"{"question":"","question_type":"none","explanation":"Nothing visible."}"#)
     #expect(none.tag.question == nil)
-    #expect(none.tag.subtitle == "Claude could not confirm a question and answer")
+    #expect(none.tag.subtitle == "The model could not confirm a question and answer")
 }

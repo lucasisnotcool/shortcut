@@ -2,13 +2,17 @@
 
 Shortcut is a free, personal-use macOS app for teaching staff. It checks the
 multiple-choice question you are presenting against your own course
-materials, using your own Claude subscription. It is not notarized by Apple
+materials, using your own Claude subscription or API keys. It is not notarized by Apple
 and comes with no support.
 
-**You need:** macOS 14 or later, and a claude.ai **Pro or Max** plan.
+**You need:** macOS 14 or later, and one of: a claude.ai **Pro or Max** plan,
+an API key (Anthropic, OpenAI, Google Gemini, OpenRouter, xAI, Mistral, Groq,
+DeepSeek, Azure OpenAI or any OpenAI-compatible server), or a local model in
+Ollama or LM Studio.
 
 **Before you start:** Shortcut sends the files in the folders you add,
-screenshots of the active window, pasted images and the chat to Anthropic.
+screenshots of the active window, pasted images and the chat to the model
+provider you use (Anthropic for Claude Code).
 Only add material you are allowed to share, and don't use Shortcut to answer
 an assessment you are taking.
 
@@ -38,7 +42,8 @@ is ready:
 | Step | What happens |
 |---|---|
 | **Install Claude Code** | Opens Terminal and runs Anthropic's installer (`curl -fsSL https://claude.ai/install.sh \| bash`), then starts the sign-in. |
-| **Sign in to Claude** | Opens Terminal and runs `claude auth login`. Sign in with your claude.ai account in the browser. API keys are not supported. |
+| **Sign in to Claude** | Opens Terminal and runs `claude auth login`. Sign in with your claude.ai account in the browser. |
+| **Set up a model** (instead of the two steps above) | Click **Models…**, add a provider with **Add Model**, paste its key, pick a model with **Fetch List**, and click **Test Connection**. Drag the list so your preferred model is first; models further down answer when it fails. |
 | **Allow Accessibility** | Turn on **Shortcut** in the pane that opens. Needed for the Option-key gestures. |
 | **Allow Screen Recording** | Turn on **Shortcut**, then choose **Quit & Reopen** if macOS asks. Needed to read the question on screen. |
 

@@ -96,7 +96,8 @@ import Testing
 @Test @MainActor func renderMainWindowSnapshot() async throws {
     guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
     _ = NSApplication.shared
-    let model = AppModel(conversation: ConversationStore(directory: nil))
+    let model = AppModel(conversation: ConversationStore(directory: nil),
+                         models: ModelStore(defaults: nil, keys: MemoryKeyStore()))
     if let folder = ProcessInfo.processInfo.environment["SHORTCUT_CONTEXT_DIR"] {
         model.addContextRoots([URL(fileURLWithPath: folder)])
         _ = await model.refreshContext().value
@@ -108,7 +109,8 @@ import Testing
         ChatMessage(role: .user, text: "Which reference files are loaded?", images: []),
         ChatMessage(role: .assistant, text: "**Embedded reference documents: 3**\n\nBiology/Week 1 notes.pdf\n…", images: []),
         ChatMessage(role: .user, text: "Check the question in the active window.", images: [shot], isWindowCheck: true),
-        ChatMessage(role: .assistant, text: "The Week 1 notes define the mitochondrion as the site of aerobic respiration, which matches option C.", images: [], answer: AnswerTag(kind: .single, values: ["C"]))
+        ChatMessage(role: .assistant, text: "The Week 1 notes define the mitochondrion as the site of aerobic respiration, which matches option C.", images: [], answer: AnswerTag(kind: .single, values: ["C"]),
+                    answeredBy: AnsweredBy(label: "Opus · 1M context · Claude Code", provider: .claudeCLI))
     ]
     let hosting = NSHostingView(rootView: MainView(model: model))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 700),
@@ -140,6 +142,43 @@ import Testing
     hosting.cacheDisplay(in: hosting.bounds, to: rep)
     try #require(rep.representation(using: .png, properties: [:]))
         .write(to: URL(fileURLWithPath: directory).appendingPathComponent("prompt-editor.png"))
+}
+
+@Test @MainActor func renderModelsSnapshot() throws {
+    guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
+    _ = NSApplication.shared
+    let store = ModelStore(defaults: nil, keys: MemoryKeyStore(["anthropic": "sk-ant-demo"]))
+    var gemini = store.add(.gemini)
+    gemini.name = "Gemini 2.5 Pro"
+    gemini.webSearch = true
+    gemini.contextTokens = 1_048_576
+    store.entries[1] = gemini
+    var anthropic = store.add(.anthropic)
+    anthropic.name = "Claude Opus 5 (API)"
+    anthropic.contextTokens = 200_000
+    store.entries[2] = anthropic
+    var local = store.add(.ollama)
+    local.model = "gemma3:12b"
+    local.contextTokens = 131_072
+    store.entries[3] = local
+    var deepseek = store.add(.deepSeek)
+    deepseek.isEnabled = false
+    store.entries[4] = deepseek
+    let model = AppModel(conversation: ConversationStore(directory: nil), models: store)
+    for (name, selection) in [("models", anthropic.id), ("models-claude", store.entries[0].id)] {
+        let hosting = NSHostingView(rootView: ModelsView(model: model, selection: selection))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = hosting
+        for _ in 0..<5 {
+            hosting.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:]))
+            .write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+    }
 }
 
 @Test @MainActor func renderMenuBarBadges() throws {

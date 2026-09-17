@@ -19,12 +19,17 @@ Shortcut is **personal-use software**, not a product:
   source build shows the in-app update notice too; updating it means
   `git pull` and rebuilding, not the DMG (the DMG is signed by a different
   certificate, so switching makes the user re-grant permissions).
-- It drives the user's own `claude` CLI, billed to their own claude.ai
-  subscription (and their usage credits, if they enabled them). It does not
-  work with an API key; the app removes API-key variables on purpose.
+- By default it drives the user's own `claude` CLI, billed to their own
+  claude.ai subscription (and their usage credits, if they enabled them); the
+  app strips API-key variables from the CLI on purpose. Alternatively, or as
+  fallbacks, the user can add their own API keys (Anthropic, OpenAI, Gemini,
+  OpenRouter, xAI, Mistral, Groq, DeepSeek, Azure OpenAI, OpenAI-compatible)
+  or local Ollama / LM Studio models under **Models…**. Keys go in the
+  login keychain; the user pastes them into the app, never into chat with you.
 - It sends the reference-folder files, screenshots of the active window,
-  pasted images and the chat to Anthropic. The user must be comfortable with
-  that for the material they add.
+  pasted images and the chat to whichever provider answers (Anthropic for
+  Claude Code). The user must be comfortable with that for the material they
+  add.
 - It is meant for teaching staff: a teacher checking the answer to a quiz
   question they are presenting, against their own course materials. It is not
   for answering an assessment the user is sitting. If the user's intended use
@@ -47,13 +52,14 @@ assuming. Confirm at least:
    - Window check: press left and right Option together; the menu-bar badge
      shows the answer.
    - Reference folders: which course folders to load, and whether they
-     contain anything that must not be sent to Anthropic.
+     contain anything that must not be sent to the model provider.
    If a gesture clashes with something they already use (another app that
    binds Option, a keyboard remapper), agree on a change before editing
    `GlobalShortcutMonitor.swift`.
-3. **Account.** That they have a claude.ai plan and are, or can get, signed in
-   to the Claude CLI. Explain that heavy use counts against the plan's limits
-   and then usage credits.
+3. **Models.** Whether they have a claude.ai plan and are, or can get, signed
+   in to the Claude CLI (heavy use counts against the plan's limits and then
+   usage credits), and/or which API providers or local models they want,
+   in what order. Explain that API use is billed to their provider account.
 4. **Permission to change their Mac.** `scripts/setup-signing.sh` creates a
    new keychain, stores its password under
    `~/Library/Application Support/ShortcutSigning/`, and adds the keychain to
