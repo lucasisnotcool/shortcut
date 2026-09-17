@@ -33,6 +33,23 @@ import Testing
                 ChatMessage(role: .assistant, text: "The window shows a code editor; no multiple-choice question with options is visible.", images: [], answerOption: "NONE")
             ]
         }),
+        ("mrq", {
+            let answer = WindowAnswer(options: ["1", "3", "4"], explanation: "Options 1, 3 and 4 are all described as evidence in the Week 5 notes; option 2 is a claim, not evidence.", isMultiple: true,
+                                      verdicts: [OptionVerdict(option: "1", isAnswer: true, reason: "Measured data (Week 5)."),
+                                                 OptionVerdict(option: "2", isAnswer: false, reason: "An opinion, not evidence."),
+                                                 OptionVerdict(option: "3", isAnswer: true, reason: "Peer-reviewed study."),
+                                                 OptionVerdict(option: "4", isAnswer: true, reason: "Replicated result.")])
+            $0.messages = [
+                ChatMessage(role: .user, text: "Check the question in the active window.", images: [sample], isWindowCheck: true),
+                ChatMessage(role: .assistant, text: answer.chatText, images: [], answerOption: answer.storageValue, answerIsMultiple: true)
+            ]
+        }),
+        ("truefalse", {
+            $0.messages = [
+                ChatMessage(role: .user, text: "Check the question in the active window.", images: [], isWindowCheck: true),
+                ChatMessage(role: .assistant, text: "The notes state the opposite.\n\n**T** ✗  Contradicted by Week 2.\n**F** ✓  Matches Week 2.", images: [], answerOption: "F", answerIsTrueFalse: true)
+            ]
+        }),
         ("pasted", {
             $0.addPastedImage(sample)
             $0.messages = [ChatMessage(role: .user, text: "Pending question", images: [])]
@@ -107,4 +124,29 @@ import Testing
     hosting.cacheDisplay(in: hosting.bounds, to: rep)
     try #require(rep.representation(using: .png, properties: [:]))
         .write(to: URL(fileURLWithPath: directory).appendingPathComponent("prompt-editor.png"))
+}
+
+@Test @MainActor func renderMenuBarBadges() throws {
+    guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
+    let texts: [String?] = [nil, "B", "F", "!", "×", "1 3 4", "A C", "1 2 3 4 5 6"]
+    let images = texts.map(StatusItemController.badgeImage(text:))
+    let width = images.reduce(CGFloat(10)) { $0 + $1.size.width + 10 }
+    let canvas = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in
+        NSColor.white.setFill(); rect.fill()
+        var x: CGFloat = 10
+        for image in images {
+            image.draw(in: NSRect(x: x, y: 2, width: image.size.width, height: image.size.height))
+            x += image.size.width + 10
+        }
+        return true
+    }
+    let big = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(width * 4), pixelsHigh: 88, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                               bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: big)
+    canvas.draw(in: NSRect(x: 0, y: 0, width: width * 4, height: 88))
+    NSGraphicsContext.restoreGraphicsState()
+    try #require(big.representation(using: .png, properties: [:]))
+        .write(to: URL(fileURLWithPath: directory).appendingPathComponent("badges.png"))
 }

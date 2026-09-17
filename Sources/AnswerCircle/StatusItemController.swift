@@ -10,7 +10,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let checkWindow: () -> Void
     }
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let model: AppModel
     private let actions: Actions
     private var cancellables: Set<AnyCancellable> = []
@@ -45,9 +45,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             )))
             menu.addItem(.separator())
         } else if case .answer = model.badgeState, let answer = model.lastWindowAnswer {
+            let title = answer.options.count > 1 ? "Answers \(answer.label)"
+                : answer.isTrueFalse ? "Answer: \(answer.label)" : "Answer \(answer.label)"
+            let kind = answer.isMultiple ? " · multiple-response question" : answer.isTrueFalse ? " · true/false" : ""
             menu.addItem(viewItem(StatusMenuDetail(
-                title: "Answer \(answer.option)",
-                detail: answer.explanation
+                title: title + kind,
+                detail: answer.chatText
             )))
             menu.addItem(.separator())
         } else if model.badgeState == .error, let error = model.transientError {
@@ -109,7 +112,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         spinnerTimer = nil
         switch state {
         case .idle:
-            statusItem.button?.image = badgeImage(text: nil)
+            statusItem.button?.image = Self.badgeImage(text: nil)
             statusItem.button?.toolTip = "Shortcut"
         case .loading:
             statusItem.button?.toolTip = "Checking the active window…"
@@ -122,30 +125,37 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 }
             }
         case .answer(let option):
-            statusItem.button?.image = badgeImage(text: option)
-            statusItem.button?.toolTip = "Answer: \(option)"
+            statusItem.button?.image = Self.badgeImage(text: option)
+            statusItem.button?.toolTip = "Answer: \(model.lastWindowAnswer?.label ?? option)"
         case .noAnswer:
-            statusItem.button?.image = badgeImage(text: "!")
+            statusItem.button?.image = Self.badgeImage(text: "!")
             statusItem.button?.toolTip = "No answer: \(model.lastWindowAnswer?.explanation ?? "")"
         case .error:
-            statusItem.button?.image = badgeImage(text: "×")
+            statusItem.button?.image = Self.badgeImage(text: "×")
             statusItem.button?.toolTip = model.transientError ?? "Shortcut encountered an error"
         }
     }
 
     /// Monochrome template images: an outlined ring, optionally with a
-    /// character inside. The menu bar tints them for light and dark mode.
-    private func badgeImage(text: String?) -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+    /// character inside; several answers ("1 3 4") get an outlined capsule
+    /// that widens to fit. The menu bar tints them for light and dark mode.
+    static func badgeImage(text: String?) -> NSImage {
+        let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+        let value = text.map { NSAttributedString(string: $0, attributes: [.font: font, .foregroundColor: NSColor.black]) }
+        let textWidth = ceil(value?.size().width ?? 0)
+        let isCapsule = (text?.count ?? 0) > 1
+        let size = NSSize(width: isCapsule ? max(18, textWidth + 12) : 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
             NSColor.black.setStroke()
-            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1.25, dy: 1.25))
-            circle.lineWidth = 1.4
-            circle.stroke()
-            if let text {
-                let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-                let value = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.black])
-                let size = value.size()
-                value.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+            let outline = rect.insetBy(dx: 1.25, dy: 1.25)
+            let shape = isCapsule
+                ? NSBezierPath(roundedRect: outline, xRadius: outline.height / 2, yRadius: outline.height / 2)
+                : NSBezierPath(ovalIn: outline)
+            shape.lineWidth = 1.4
+            shape.stroke()
+            if let value {
+                let textSize = value.size()
+                value.draw(at: NSPoint(x: rect.midX - textSize.width / 2, y: rect.midY - textSize.height / 2))
             }
             return true
         }

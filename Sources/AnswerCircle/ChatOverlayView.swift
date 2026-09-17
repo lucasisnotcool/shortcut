@@ -214,19 +214,9 @@ struct ReplyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let option = message.answerOption {
-                let declined = option == WindowAnswer.noAnswer
-                HStack(spacing: 10) {
-                    Text(declined ? "!" : option)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .frame(width: 32, height: 32)
-                        .overlay(Circle().stroke(Color.primary.opacity(0.7), lineWidth: 1.2))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(declined ? "No answer" : "Answer \(option)").font(.system(size: 14, weight: .semibold))
-                        Text(declined ? "Claude could not confirm a question and answer" : "From the active window")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }
+            if let stored = message.answerOption {
+                AnswerHeader(labels: WindowAnswer.labels(fromStorage: stored), isMultiple: message.answerIsMultiple,
+                             isTrueFalse: message.answerIsTrueFalse)
             }
             Text(Self.markdown(message.text))
                 .font(.system(size: 13.5))
@@ -258,6 +248,49 @@ struct ReplyView: View {
     static func markdown(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+}
+
+/// One outlined circle per selected option, or "!" when Claude gave no answer.
+struct AnswerHeader: View {
+    let labels: [String]
+    let isMultiple: Bool
+    var isTrueFalse = false
+
+    private var title: String {
+        switch labels.count {
+        case 0: return "No answer"
+        case 1: return isTrueFalse ? "Answer: \(WindowAnswer.trueFalseWord(labels[0]))" : "Answer \(labels[0])"
+        default: return "Answers \(labels.joined(separator: ", "))"
+        }
+    }
+
+    private var subtitle: String {
+        if labels.isEmpty { return "Claude could not confirm a question and answer" }
+        if isTrueFalse { return "True/false question" }
+        if isMultiple {
+            return labels.count == 1
+                ? "Multiple-response question · only this option is correct"
+                : "Multiple-response question · select all \(labels.count)"
+        }
+        return "From the active window"
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 5) {
+                ForEach(labels.isEmpty ? ["!"] : labels, id: \.self) { label in
+                    Text(label)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .frame(width: 32, height: 32)
+                        .overlay(Circle().stroke(Color.primary.opacity(0.7), lineWidth: 1.2))
+                }
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 14, weight: .semibold))
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

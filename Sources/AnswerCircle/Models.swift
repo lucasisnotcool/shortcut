@@ -18,18 +18,63 @@ struct ChatMessage: Identifiable {
     let role: MessageRole
     let text: String
     let images: [NSImage]
-    /// Set on assistant messages produced by an active-window check.
+    /// Set on assistant messages produced by an active-window check:
+    /// the answer labels joined by commas ("B", "1,3,4"), or "NONE".
     var answerOption: String? = nil
+    /// The question accepts several options (checkboxes, "select all that apply").
+    var answerIsMultiple = false
+    /// A true/false question; labels are "T" / "F".
+    var answerIsTrueFalse = false
     /// Set on user messages that represent an active-window check.
     var isWindowCheck = false
 }
 
+struct OptionVerdict: Equatable {
+    let option: String
+    let isAnswer: Bool
+    let reason: String
+}
+
 struct WindowAnswer: Equatable {
     static let noAnswer = "NONE"
-    let option: String
+    /// Labels of the options to select, in display order; empty when Claude declined.
+    let options: [String]
     let explanation: String
+    /// The question accepts several options, even if only one is correct.
+    var isMultiple = false
+    /// Labels are "T" / "F".
+    var isTrueFalse = false
+    var verdicts: [OptionVerdict] = []
+
     /// Claude declined: no readable question, or not confident.
-    var isNoAnswer: Bool { option == Self.noAnswer }
+    var isNoAnswer: Bool { options.isEmpty }
+    /// "B", "1,3,4" or "NONE"; stored with chat messages.
+    var storageValue: String { isNoAnswer ? Self.noAnswer : options.joined(separator: ",") }
+    /// "B", "1, 3, 4" or "True".
+    var label: String {
+        if isNoAnswer { return Self.noAnswer }
+        if isTrueFalse { return options.map(Self.trueFalseWord).joined(separator: ", ") }
+        return options.joined(separator: ", ")
+    }
+
+    static func trueFalseWord(_ label: String) -> String {
+        switch label {
+        case "T": return "True"
+        case "F": return "False"
+        default: return label
+        }
+    }
+
+    /// Explanation followed by one line per option, for the chat.
+    var chatText: String {
+        guard !verdicts.isEmpty else { return explanation }
+        let lines = verdicts.map { "**\($0.option)** \($0.isAnswer ? "✓" : "✗")  \($0.reason)" }
+        return explanation + "\n\n" + lines.joined(separator: "\n")
+    }
+
+    static func labels(fromStorage value: String) -> [String] {
+        value == noAnswer ? [] : value.split(separator: ",").map(String.init)
+    }
 }
 
 enum AnswerBadgeState: Equatable {
@@ -230,17 +275,17 @@ final class AppModel: ObservableObject {
                 ))
                 let context = await currentContext()
                 let answer = try await claude.answerQuestion(screenshot: capturedURL, context: context)
-                guard Self.isValidOption(answer.option) else {
-                    throw AppError.invalidResponse("Claude returned an unsupported option: \(answer.option)")
-                }
                 lastWindowAnswer = answer
-                badgeState = answer.isNoAnswer ? .noAnswer : .answer(answer.option)
+                badgeState = answer.isNoAnswer ? .noAnswer : .answer(answer.options.joined(separator: " "))
                 messages.append(ChatMessage(
                     role: .assistant,
-                    text: answer.explanation,
+                    text: answer.chatText,
                     images: [],
-                    answerOption: answer.option
+                    answerOption: answer.storageValue,
+                    answerIsMultiple: answer.isMultiple,
+                    answerIsTrueFalse: answer.isTrueFalse
                 ))
+                appLog.info("Window answer: \(answer.storageValue, privacy: .public) (multiple: \(answer.isMultiple), true/false: \(answer.isTrueFalse))")
             } catch {
                 appLog.error("Window check failed: \(error.localizedDescription, privacy: .public)")
                 transientError = error.localizedDescription
@@ -276,8 +321,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    static func isValidOption(_ raw: String) -> Bool {
-        ["1", "2", "3", "4", "A", "B", "C", "D", WindowAnswer.noAnswer].contains(raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+    /// Option labels Shortcut accepts: 1–8 or A–H.
+    nonisolated static let numberLabels = (1...8).map(String.init)
+    nonisolated static let letterLabels = ["A", "B", "C", "D", "E", "F", "G", "H"]
+
+    nonisolated static func isValidOption(_ raw: String) -> Bool {
+        let label = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return numberLabels.contains(label) || letterLabels.contains(label)
     }
 
     private func schedulePermissionRefresh() {
@@ -312,6 +362,8 @@ final class ConversationStore {
         let text: String
         let imageFiles: [String]
         let answerOption: String?
+        let answerIsMultiple: Bool?
+        let answerIsTrueFalse: Bool?
         let isWindowCheck: Bool
     }
 
@@ -341,7 +393,9 @@ final class ConversationStore {
                 images.append(image)
             }
             return ChatMessage(id: item.id, role: item.role, text: item.text, images: images,
-                               answerOption: item.answerOption, isWindowCheck: item.isWindowCheck)
+                               answerOption: item.answerOption, answerIsMultiple: item.answerIsMultiple ?? false,
+                               answerIsTrueFalse: item.answerIsTrueFalse ?? false,
+                               isWindowCheck: item.isWindowCheck)
         }
     }
 
@@ -358,6 +412,8 @@ final class ConversationStore {
                         try imageFile(for: image, name: "\(message.id.uuidString)-\(index).png", in: directory)
                     },
                     answerOption: message.answerOption,
+                    answerIsMultiple: message.answerIsMultiple,
+                    answerIsTrueFalse: message.answerIsTrueFalse,
                     isWindowCheck: message.isWindowCheck
                 )
             }

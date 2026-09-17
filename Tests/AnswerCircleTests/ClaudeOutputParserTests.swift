@@ -11,19 +11,23 @@ import Testing
 @Test func parsesStructuredOutput() throws {
     let data = #"{"structured_output":{"selected_option":"B","explanation":"Because B follows."}}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
-    #expect(answer == WindowAnswer(option: "B", explanation: "Because B follows."))
+    #expect(answer == WindowAnswer(options: ["B"], explanation: "Because B follows."))
 }
 
 @Test func parsesStructuredResultString() throws {
     let data = #"{"result":"```json\n{\"selected_option\":\"3\",\"explanation\":\"Three is correct.\"}\n```"}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
-    #expect(answer.option == "3")
+    #expect(answer.options == ["3"])
 }
 
 @Test @MainActor func validatesOptions() {
     #expect(AppModel.isValidOption("a"))
     #expect(AppModel.isValidOption(" 4 "))
-    #expect(!AppModel.isValidOption("E"))
+    #expect(AppModel.isValidOption("E"))
+    #expect(AppModel.isValidOption("8"))
+    #expect(!AppModel.isValidOption("I"))
+    #expect(!AppModel.isValidOption("9"))
+    #expect(!AppModel.isValidOption("NONE"))
 }
 
 @Test func sameOptionDoubleTapShowsChat() {
@@ -65,7 +69,7 @@ import Testing
     let data = #"{"structured_output":{"selected_option":"NONE","explanation":"No question visible."}}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
     #expect(answer.isNoAnswer)
-    #expect(AppModel.isValidOption(answer.option))
+    #expect(answer.storageValue == "NONE")
 }
 
 @Test func extractsResultFromStreamJSON() throws {
@@ -76,7 +80,7 @@ import Testing
 
     """
     let answer = try ClaudeOutputParser.windowAnswer(from: ClaudeOutputParser.resultLine(from: Data(stream.utf8)))
-    #expect(answer == WindowAnswer(option: "C", explanation: "From the notes."))
+    #expect(answer == WindowAnswer(options: ["C"], explanation: "From the notes."))
 }
 
 @Test func buildsInlineImageMessage() throws {
@@ -143,4 +147,83 @@ import Testing
     #expect(!PromptSettings.isInstructionsCustomized)
     PromptSettings.windowCheck = "   "
     #expect(PromptSettings.windowCheck == PromptSettings.defaultWindowCheck)
+}
+
+private func parse(_ json: String) throws -> WindowAnswer {
+    let envelope = try JSONSerialization.data(withJSONObject: ["result": json])
+    return try ClaudeOutputParser.windowAnswer(from: envelope)
+}
+
+@Test func multipleResponseAnswersAreCollectedInOrder() throws {
+    let answer = try parse("""
+    {"question_type":"multiple","options":[
+      {"option":"4","is_answer":true,"reason":"r4"},{"option":"1","is_answer":true,"reason":"r1"},
+      {"option":"2","is_answer":false,"reason":"r2"},{"option":"3","is_answer":true,"reason":"r3"}],
+     "explanation":"Three apply."}
+    """)
+    #expect(answer.options == ["1", "3", "4"])
+    #expect(answer.isMultiple)
+    #expect(answer.storageValue == "1,3,4")
+    #expect(answer.label == "1, 3, 4")
+    #expect(answer.chatText.contains("**2** ✗  r2"))
+    #expect(WindowAnswer.labels(fromStorage: answer.storageValue) == ["1", "3", "4"])
+}
+
+@Test func negatedMultipleResponseCanHaveOneAnswer() throws {
+    let answer = try parse("""
+    {"question_type":"multiple","options":[
+      {"option":"1","is_answer":false,"reason":"is evidence"},{"option":"2","is_answer":true,"reason":"is not evidence"},
+      {"option":"3","is_answer":false,"reason":"is evidence"},{"option":"4","is_answer":false,"reason":"is evidence"}],
+     "explanation":"Only 2 is NOT evidence."}
+    """)
+    #expect(answer.options == ["2"])
+    #expect(answer.isMultiple)
+}
+
+@Test func singleWithSeveralCorrectBecomesMultiple() throws {
+    let answer = try parse("""
+    {"question_type":"single","options":[{"option":"a","is_answer":true,"reason":""},{"option":"(C)","is_answer":true,"reason":""}],"explanation":"x"}
+    """)
+    #expect(answer.options == ["A", "C"])
+    #expect(answer.isMultiple)
+}
+
+@Test func trueFalseUsesItsOwnLabels() throws {
+    let answer = try parse("""
+    {"question_type":"true_false","options":[{"option":"T","is_answer":false,"reason":"no"},{"option":"False","is_answer":true,"reason":"yes"}],"explanation":"It is false."}
+    """)
+    #expect(answer.options == ["F"])
+    #expect(answer.isTrueFalse)
+    #expect(!answer.isMultiple)
+    #expect(answer.label == "False")
+    // Both marked correct is rejected.
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"true_false","options":[{"option":"T","is_answer":true,"reason":""},{"option":"F","is_answer":true,"reason":""}],"explanation":"x"}
+    """) }
+    // Number labels are not valid for a true/false question, and T is not valid elsewhere.
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"true_false","options":[{"option":"1","is_answer":true,"reason":""}],"explanation":"x"}
+    """) }
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"single","options":[{"option":"T","is_answer":true,"reason":""}],"explanation":"x"}
+    """) }
+}
+
+@Test func malformedAnswersAreRejected() {
+    // Mixed families.
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"multiple","options":[{"option":"1","is_answer":true,"reason":""},{"option":"B","is_answer":true,"reason":""}],"explanation":"x"}
+    """) }
+    // Out of range.
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"single","options":[{"option":"9","is_answer":true,"reason":""}],"explanation":"x"}
+    """) }
+    // Unknown type, and options without a type.
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"essay","options":[],"explanation":"x"}"#) }
+    #expect(throws: AppError.self) { try parse(#"{"options":[{"option":"1","is_answer":true}],"explanation":"x"}"#) }
+}
+
+@Test func declinedAnswersHaveNoOptions() throws {
+    #expect(try parse(#"{"question_type":"none","options":[],"explanation":"No question."}"#).isNoAnswer)
+    #expect(try parse(#"{"question_type":"multiple","options":[{"option":"1","is_answer":false,"reason":""}],"explanation":"x"}"#).isNoAnswer)
 }

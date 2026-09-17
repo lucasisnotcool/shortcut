@@ -360,17 +360,17 @@ enum ClaudeOutputParser {
     static func windowAnswer(from data: Data) throws -> WindowAnswer {
         let root = try jsonObject(from: data)
         if let object = root["structured_output"] as? [String: Any],
-           let answer = answer(from: object) {
+           let answer = try answer(from: object) {
             return answer
         }
         if let object = root["result"] as? [String: Any],
-           let answer = answer(from: object) {
+           let answer = try answer(from: object) {
             return answer
         }
         if let text = root["result"] as? String,
            let nestedData = extractJSONObject(from: text),
            let object = try? JSONSerialization.jsonObject(with: nestedData) as? [String: Any],
-           let answer = answer(from: object) {
+           let answer = try answer(from: object) {
             return answer
         }
         if root["is_error"] as? Bool == true {
@@ -404,10 +404,106 @@ enum ClaudeOutputParser {
         return object
     }
 
-    private static func answer(from object: [String: Any]) -> WindowAnswer? {
-        guard let option = (object["selected_option"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              let explanation = object["explanation"] as? String else { return nil }
-        return WindowAnswer(option: option.uppercased(), explanation: explanation)
+    /// Accepts the per-option format and the older single-option one.
+    /// Returns nil only when the object is not an answer at all; a malformed
+    /// answer throws so the teacher sees why.
+    private static func answer(from object: [String: Any]) throws -> WindowAnswer? {
+        guard let explanation = object["explanation"] as? String else { return nil }
+        let rawType = (object["question_type"] as? String)?.lowercased().replacingOccurrences(of: "-", with: "_")
+        let type = rawType.flatMap(QuestionType.init(rawValue:))
+        if rawType != nil, type == nil {
+            throw AppError.invalidResponse("Claude returned an unknown question type: \(rawType ?? "")")
+        }
+        if type == QuestionType.none {
+            return WindowAnswer(options: [], explanation: explanation)
+        }
+
+        if let entries = object["options"] as? [[String: Any]] {
+            guard let type else {
+                throw AppError.invalidResponse("Claude listed options without a question type.")
+            }
+            var verdicts: [OptionVerdict] = []
+            for entry in entries {
+                guard let raw = entry["option"] as? String, let isAnswer = entry["is_answer"] as? Bool else {
+                    throw AppError.invalidResponse("Claude returned an option without a verdict.")
+                }
+                verdicts.append(OptionVerdict(option: try normalizedLabel(raw, for: type), isAnswer: isAnswer,
+                                              reason: (entry["reason"] as? String) ?? ""))
+            }
+            let labels = try validatedSelection(verdicts.filter(\.isAnswer).map(\.option), for: type)
+            return WindowAnswer(options: labels, explanation: explanation,
+                                isMultiple: type == .multiple || labels.count > 1,
+                                isTrueFalse: type == .trueFalse, verdicts: verdicts)
+        }
+
+        // Older format: {"selected_option": "B"} or {"selected_options": [...]}.
+        let raw: [String]
+        if let list = object["selected_options"] as? [String] {
+            raw = list
+        } else if let single = object["selected_option"] as? String {
+            raw = [single]
+        } else {
+            return nil
+        }
+        if raw.contains(where: { $0.trimmingCharacters(in: .whitespaces).uppercased() == WindowAnswer.noAnswer }) {
+            return WindowAnswer(options: [], explanation: explanation)
+        }
+        let effective = type ?? (raw.count > 1 ? .multiple : .single)
+        let labels = try validatedSelection(try raw.map { try normalizedLabel($0, for: effective) }, for: effective)
+        return WindowAnswer(options: labels, explanation: explanation,
+                            isMultiple: effective == .multiple || labels.count > 1,
+                            isTrueFalse: effective == .trueFalse)
+    }
+
+    enum QuestionType: String {
+        case single, multiple, none
+        case trueFalse = "true_false"
+    }
+
+    /// The label set depends on the declared type, so "F" means False only in a
+    /// true/false question and the sixth option otherwise.
+    /// "b", " 3 ", "(C)", "Option 2.", "True" → "B", "3", "C", "2", "T".
+    static func normalizedLabel(_ raw: String, for type: QuestionType) throws -> String {
+        var label = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if label.hasPrefix("OPTION ") { label.removeFirst(7) }
+        label = label.trimmingCharacters(in: CharacterSet(charactersIn: " ().:"))
+        switch type {
+        case .trueFalse:
+            if label == "TRUE" { label = "T" }
+            if label == "FALSE" { label = "F" }
+            guard label == "T" || label == "F" else {
+                throw AppError.invalidResponse("Claude returned \(raw) for a true/false question.")
+            }
+        case .single, .multiple, .none:
+            guard AppModel.isValidOption(label) else {
+                throw AppError.invalidResponse("Claude returned an unsupported option: \(raw)")
+            }
+        }
+        return label
+    }
+
+    /// Unique, one label family, in display order, with a count that fits the type.
+    static func validatedSelection(_ labels: [String], for type: QuestionType) throws -> [String] {
+        var seen = Set<String>()
+        let unique = labels.filter { seen.insert($0).inserted }
+        switch type {
+        case .trueFalse:
+            guard unique.count <= 1 else {
+                throw AppError.invalidResponse("Claude marked both True and False as correct.")
+            }
+            return unique
+        case .single, .multiple, .none:
+            let numbers = unique.allSatisfy { AppModel.numberLabels.contains($0) }
+            let letters = unique.allSatisfy { AppModel.letterLabels.contains($0) }
+            guard numbers || letters else {
+                throw AppError.invalidResponse("Claude mixed numbered and lettered options: \(unique.joined(separator: ", "))")
+            }
+            if type == .single, unique.count > 1 {
+                // Several correct options make it a multiple-response question.
+                appLog.notice("Single-answer question came back with \(unique.count) answers; treating as multiple")
+            }
+            return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        }
     }
 
     private static func extractJSONObject(from text: String) -> Data? {

@@ -23,8 +23,9 @@ enum PromptSettings {
 
     /// Fixed: the app parses this reply.
     static let windowCheckReplyFormat = """
-    Reply with only this JSON object and nothing else:
-    {"selected_option": "1|2|3|4|A|B|C|D|NONE", "explanation": "..."}
+    Reply with only this JSON object and nothing else. List every visible option, in on-screen order, with is_answer true exactly for the options that should be selected:
+    {"question_type": "single" | "multiple" | "true_false" | "none", "options": [{"option": "<label>", "is_answer": true | false, "reason": "<one short sentence>"}], "explanation": "..."}
+    Decide question_type first; it sets the allowed labels. For "single" and "multiple", use the labels shown on screen (1-8 or A-H). For "true_false", list exactly two options, "T" and "F", with is_answer true for exactly one. Use "none" with an empty options list when you give no answer.
     """
 
     static let defaultInstructions = """
@@ -40,7 +41,15 @@ enum PromptSettings {
     """
 
     static let defaultWindowCheck = """
-    [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the multiple-choice question visible in it, solve it, and give the correct displayed option: 1-4 if the choices are numbered, A-D if lettered. These questions are usually course-specific: base the answer on the reference documents first, since the course's own definitions and conventions take precedence over general opinion. Use WebSearch only if neither the documents nor your own knowledge contain what the question needs. Return NONE instead of guessing when no multiple-choice question with visible options is on screen, the question is unreadable or cut off, or you cannot determine the answer with confidence, and say briefly why. Otherwise explain in 2-4 sentences so a teacher can verify the reasoning, naming the reference document if one was used. Answer solely from this screenshot; earlier turns are context only.
+    [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the multiple-choice question visible in it and work out which displayed options are correct. Options are labelled 1-8 or A-H as shown.
+
+    Question type: a statement to judge as true or false is "true_false" (use T and F even if the screen shows True/False buttons without labels). Otherwise decide whether the question accepts one option ("single") or several ("multiple"). Use wording such as "select all that apply", "choose two" or "which of the following are", checkbox-style controls, and the facts themselves: if more than one option is correct, it is "multiple". A "multiple" question can still have exactly one correct option.
+
+    Judge each option on its own: restate the question stem, including any negation (NOT, EXCEPT, LEAST, FALSE, incorrect), and decide whether that option satisfies it. For "Which of the following are NOT evidence of X", an option is an answer only if it is not evidence of X; if options 1, 3 and 4 are evidence, the answer is 2 alone.
+
+    Base every verdict on facts: the reference documents first, since the course's own definitions and conventions take precedence over general opinion, then your own knowledge, and WebSearch only if neither is enough. Do not infer the answer from the interface: ignore options that already look selected, highlighted, ticked or marked correct, and do not let the number of checkboxes suggest how many answers there are.
+
+    Give no answer (question_type "none") instead of guessing when no multiple-choice question with visible options is on screen, the question is unreadable or cut off, or you cannot determine the answer with confidence, and say briefly why. Otherwise explain in 2-4 sentences so a teacher can verify the reasoning, naming the reference document if one was used. Answer solely from this screenshot; earlier turns are context only.
     """
 
     private static func stored(_ key: String) -> String? {
