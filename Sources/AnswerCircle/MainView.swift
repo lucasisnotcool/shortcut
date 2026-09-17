@@ -70,6 +70,10 @@ private struct ContextSidebar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Shortcut").font(.title3.weight(.semibold))
                 Text("Claude · \(ClaudeService.modelDisplayName)").font(.caption).foregroundStyle(.secondary)
+                if let account = model.claudeAccount {
+                    Text(account).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        .help("Usage beyond the plan's limits uses your Claude usage credits, if enabled in claude.ai Settings › Usage.")
+                }
             }
         }
     }

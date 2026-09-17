@@ -45,11 +45,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             )))
             menu.addItem(.separator())
         } else if case .answer = model.badgeState, let answer = model.lastWindowAnswer {
-            let title = answer.options.count > 1 ? "Answers \(answer.label)"
-                : answer.isTrueFalse ? "Answer: \(answer.label)" : "Answer \(answer.label)"
-            let kind = answer.isMultiple ? " · multiple-response question" : answer.isTrueFalse ? " · true/false" : ""
             menu.addItem(viewItem(StatusMenuDetail(
-                title: title + kind,
+                title: "\(answer.tag.title) · \(answer.tag.subtitle)",
                 detail: answer.chatText
             )))
             menu.addItem(.separator())
@@ -126,7 +123,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
         case .answer(let option):
             statusItem.button?.image = Self.badgeImage(text: option)
-            statusItem.button?.toolTip = "Answer: \(model.lastWindowAnswer?.label ?? option)"
+            statusItem.button?.toolTip = model.lastWindowAnswer?.tag.title ?? option
         case .noAnswer:
             statusItem.button?.image = Self.badgeImage(text: "!")
             statusItem.button?.toolTip = "No answer: \(model.lastWindowAnswer?.explanation ?? "")"
@@ -191,11 +188,11 @@ private struct StatusMenuDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.system(size: 13, weight: .semibold))
-            Text(detail)
+            Text(ReplyView.markdown(detail))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(12)
+                .lineLimit(24)
         }
         .frame(width: 300, alignment: .leading)
         .padding(.horizontal, 14)

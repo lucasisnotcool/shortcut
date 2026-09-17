@@ -18,7 +18,7 @@ import Testing
         let model = AppModel(conversation: ConversationStore(directory: nil))
         model.messages = [
             ChatMessage(role: .user, text: "Check the question in the active window.", images: [shot], isWindowCheck: true),
-            ChatMessage(role: .assistant, text: String(repeating: "The lecture notes explain the answer in detail. ", count: 4), images: [], answerOption: "B")
+            ChatMessage(role: .assistant, text: String(repeating: "The lecture notes explain the answer in detail. ", count: 4), images: [], answer: AnswerTag(kind: .single, values: ["B"]))
         ]
         var changes = 0
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: ChatOverlayView.width, height: 52),

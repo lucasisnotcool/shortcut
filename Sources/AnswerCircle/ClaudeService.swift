@@ -34,6 +34,48 @@ actor ClaudeService {
         defaults.removeObject(forKey: Self.contextSignatureKey)
     }
 
+    /// Keys that would make the CLI bill somewhere other than the claude.ai
+    /// subscription (whose usage credits cover overflow), or that belong to a
+    /// parent Claude Code session.
+    private static let strippedEnvironment = [
+        "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+        "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"
+    ]
+
+    static func childEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        for key in strippedEnvironment { environment.removeValue(forKey: key) }
+        environment["PATH"] = [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
+            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"
+        ].joined(separator: ":")
+        return environment
+    }
+
+    /// "Max plan · you@example.com", from `claude auth status`.
+    static func accountSummary() async -> String? {
+        guard let executable = locateExecutable() else { return nil }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["auth", "status"]
+        process.environment = childEnvironment()
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = await Task.detached { pipe.fileHandleForReading.readDataToEndOfFile() }.value
+        process.waitUntilExit()
+        guard let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let method = status["authMethod"] as? String ?? "?"
+        let plan = (status["subscriptionType"] as? String).map { $0.prefix(1).uppercased() + $0.dropFirst() + " plan" }
+        appLog.notice("Claude CLI auth: method \(method, privacy: .public), plan \(plan ?? "none", privacy: .public)")
+        guard status["loggedIn"] as? Bool == true else { return "Not signed in — run claude auth login" }
+        if method != "claude.ai" { return "Signed in with \(method) (not a Claude subscription)" }
+        return [plan, status["email"] as? String].compactMap { $0 }.joined(separator: " · ")
+    }
+
     static func locateExecutable() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [
@@ -205,15 +247,7 @@ actor ClaudeService {
         process.arguments = arguments
         process.currentDirectoryURL = try managedWorkspace()
 
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = [
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
-            "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"
-        ].joined(separator: ":")
-        // Never let a parent Claude Code session leak into the child.
-        environment.removeValue(forKey: "CLAUDECODE")
-        environment.removeValue(forKey: "CLAUDE_CODE_ENTRYPOINT")
-        process.environment = environment
+        process.environment = Self.childEnvironment()
 
         let outputDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Shortcut-output-\(UUID().uuidString)", isDirectory: true)
@@ -404,39 +438,171 @@ enum ClaudeOutputParser {
         return object
     }
 
-    /// Accepts the per-option format and the older single-option one.
-    /// Returns nil only when the object is not an answer at all; a malformed
-    /// answer throws so the teacher sees why.
+    /// Reads a window-check reply. `question_type` comes first and decides
+    /// which fields and labels are valid. The older `selected_option(s)`
+    /// format still parses. Returns nil only when the object is not an answer
+    /// at all; a malformed answer throws so the teacher sees why.
     private static func answer(from object: [String: Any]) throws -> WindowAnswer? {
         guard let explanation = object["explanation"] as? String else { return nil }
-        let rawType = (object["question_type"] as? String)?.lowercased().replacingOccurrences(of: "-", with: "_")
-        let type = rawType.flatMap(QuestionType.init(rawValue:))
-        if rawType != nil, type == nil {
-            throw AppError.invalidResponse("Claude returned an unknown question type: \(rawType ?? "")")
-        }
-        if type == QuestionType.none {
-            return WindowAnswer(options: [], explanation: explanation)
+        let rawType = (object["question_type"] as? String)?
+            .lowercased().replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
+        let kind = rawType.flatMap(AnswerKind.init(rawValue:))
+        if rawType != nil, kind == nil {
+            throw invalid("Claude returned an unknown question type: \(rawType ?? "")")
         }
 
-        if let entries = object["options"] as? [[String: Any]] {
-            guard let type else {
-                throw AppError.invalidResponse("Claude listed options without a question type.")
-            }
-            var verdicts: [OptionVerdict] = []
-            for entry in entries {
-                guard let raw = entry["option"] as? String, let isAnswer = entry["is_answer"] as? Bool else {
-                    throw AppError.invalidResponse("Claude returned an option without a verdict.")
-                }
-                verdicts.append(OptionVerdict(option: try normalizedLabel(raw, for: type), isAnswer: isAnswer,
-                                              reason: (entry["reason"] as? String) ?? ""))
-            }
-            let labels = try validatedSelection(verdicts.filter(\.isAnswer).map(\.option), for: type)
-            return WindowAnswer(options: labels, explanation: explanation,
-                                isMultiple: type == .multiple || labels.count > 1,
-                                isTrueFalse: type == .trueFalse, verdicts: verdicts)
+        switch kind {
+        case .none?:
+            return .none(explanation)
+        case .ranking?:
+            return try ranking(object, explanation)
+        case .matching?:
+            return try matching(object, explanation)
+        case .numeric?:
+            return try numeric(object, explanation)
+        case .fillBlank?:
+            return try fillBlank(object, explanation)
+        case let choice?:
+            if object["options"] != nil { return try choiceAnswer(object, kind: choice, explanation) }
+            return try legacy(object, kind: choice, explanation)
+        case nil:
+            if object["options"] != nil { throw invalid("Claude listed options without a question type.") }
+            return try legacy(object, kind: nil, explanation)
         }
+    }
 
-        // Older format: {"selected_option": "B"} or {"selected_options": [...]}.
+    private static func invalid(_ message: String) -> AppError { .invalidResponse(message) }
+
+    private static func string(_ value: Any?) -> String? {
+        if let text = value as? String { return text }
+        if let number = value as? NSNumber { return number.stringValue }
+        return nil
+    }
+
+    /// single, multiple, true_false, dropdown: a verdict for every option.
+    private static func choiceAnswer(_ object: [String: Any], kind: AnswerKind, _ explanation: String) throws -> WindowAnswer {
+        guard let entries = object["options"] as? [[String: Any]] else {
+            throw invalid("Claude returned options in an unexpected shape.")
+        }
+        var selected: [String] = []
+        var details: [String] = []
+        for entry in entries {
+            guard let raw = string(entry["option"]), let isAnswer = entry["is_answer"] as? Bool else {
+                throw invalid("Claude returned an option without a verdict.")
+            }
+            let label = try normalizedLabel(raw, for: kind)
+            if isAnswer { selected.append(label) }
+            let text = (string(entry["text"])).map { " \($0) —" } ?? ""
+            details.append("**\(label)** \(isAnswer ? "✓" : "✗")\(text)  \(string(entry["reason"]) ?? "")")
+        }
+        let values = try validatedSelection(selected, for: kind)
+        var finalKind = kind
+        switch kind {
+        case .trueFalse where values.count > 1:
+            throw invalid("Claude marked both True and False as correct.")
+        case .dropdown where values.count > 1:
+            throw invalid("Claude picked \(values.count) options in a single dropdown.")
+        case .single where values.count > 1:
+            // Several correct options make it a multiple-response question.
+            appLog.notice("Single-answer question came back with \(values.count) answers; treating as multiple")
+            finalKind = .multiple
+        default:
+            break
+        }
+        if values.isEmpty { return WindowAnswer(tag: AnswerTag(kind: .none, values: []), explanation: explanation, details: details) }
+        return WindowAnswer(tag: AnswerTag(kind: finalKind, values: values), explanation: explanation, details: details)
+    }
+
+    /// {"items": [{"option", "text"}], "order": [labels first to last]}
+    private static func ranking(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
+        guard let rawOrder = object["order"] as? [Any], !rawOrder.isEmpty else {
+            throw invalid("Claude gave a ranking without an order.")
+        }
+        let order = try rawOrder.map { value -> String in
+            guard let raw = string(value) else { throw invalid("Claude gave an unreadable ranking entry.") }
+            return try normalizedLabel(raw, for: .ranking)
+        }
+        try requireOneFamily(order, for: .ranking)
+        guard Set(order).count == order.count else {
+            throw invalid("Claude's ranking repeats an option: \(order.joined(separator: " "))")
+        }
+        var texts: [String: String] = [:]
+        if let items = object["items"] as? [[String: Any]] {
+            for item in items {
+                guard let raw = string(item["option"]) else { continue }
+                texts[try normalizedLabel(raw, for: .ranking)] = string(item["text"]) ?? ""
+            }
+            if !texts.isEmpty, Set(texts.keys) != Set(order) {
+                throw invalid("Claude's ranking does not use every listed option exactly once.")
+            }
+        }
+        let details = order.enumerated().map { index, label in
+            let text = texts[label].map { $0.isEmpty ? "" : "  \($0)" } ?? ""
+            return "\(Self.ordinal(index + 1))  **\(label)**\(text)"
+        }
+        return WindowAnswer(tag: AnswerTag(kind: .ranking, values: order), explanation: explanation, details: details)
+    }
+
+    /// {"matches": [{"item", "item_text", "choice", "choice_text", "reason"}]}
+    private static func matching(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
+        guard let entries = object["matches"] as? [[String: Any]], !entries.isEmpty else {
+            throw invalid("Claude gave a matching answer without matches.")
+        }
+        var pairs: [(item: String, choice: String, line: String)] = []
+        for entry in entries {
+            guard let rawItem = string(entry["item"]), let rawChoice = string(entry["choice"]) else {
+                throw invalid("Claude left an item unmatched.")
+            }
+            let item = try normalizedLabel(rawItem, for: .matching)
+            let choice = try normalizedLabel(rawChoice, for: .matching)
+            let itemText = string(entry["item_text"]).map { " \($0)" } ?? ""
+            let choiceText = string(entry["choice_text"]).map { " \($0)" } ?? ""
+            let reason = string(entry["reason"]).map { " — \($0)" } ?? ""
+            pairs.append((item, choice, "**\(item)**\(itemText) → **\(choice)**\(choiceText)\(reason)"))
+        }
+        let items = pairs.map(\.item)
+        guard Set(items).count == items.count else {
+            throw invalid("Claude matched the same item twice.")
+        }
+        try requireOneFamily(items, for: .matching)
+        try requireOneFamily(pairs.map(\.choice), for: .matching)
+        pairs.sort { $0.item.localizedStandardCompare($1.item) == .orderedAscending }
+        return WindowAnswer(tag: AnswerTag(kind: .matching, values: pairs.map(\.choice)),
+                            explanation: explanation, details: pairs.map(\.line))
+    }
+
+    /// {"value": "42", "unit": "kg"}
+    private static func numeric(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
+        guard let value = string(object["value"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty, value.count <= 40 else {
+            throw invalid("Claude gave a number answer without a usable value.")
+        }
+        let unit = string(object["unit"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let details = ["**\(value)**\(unit.isEmpty ? "" : " \(unit)")"]
+        return WindowAnswer(tag: AnswerTag(kind: .numeric, values: [value]), explanation: explanation, details: details)
+    }
+
+    /// {"blanks": [{"blank": "1", "answer": "...", "reason": "..."}]}
+    private static func fillBlank(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
+        guard let entries = object["blanks"] as? [[String: Any]], !entries.isEmpty else {
+            throw invalid("Claude gave a fill-in-the-blank answer without blanks.")
+        }
+        var values: [String] = []
+        var details: [String] = []
+        for (index, entry) in entries.enumerated() {
+            guard let text = string(entry["answer"])?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+                throw invalid("Claude left a blank empty.")
+            }
+            let name = string(entry["blank"]) ?? String(index + 1)
+            let reason = string(entry["reason"]).map { " — \($0)" } ?? ""
+            values.append(text)
+            details.append("**Blank \(name):** \(text)\(reason)")
+        }
+        return WindowAnswer(tag: AnswerTag(kind: .fillBlank, values: values), explanation: explanation, details: details)
+    }
+
+    /// Older format: {"selected_option": "B"} or {"selected_options": [...]}.
+    private static func legacy(_ object: [String: Any], kind: AnswerKind?, _ explanation: String) throws -> WindowAnswer? {
         let raw: [String]
         if let list = object["selected_options"] as? [String] {
             raw = list
@@ -445,65 +611,62 @@ enum ClaudeOutputParser {
         } else {
             return nil
         }
-        if raw.contains(where: { $0.trimmingCharacters(in: .whitespaces).uppercased() == WindowAnswer.noAnswer }) {
-            return WindowAnswer(options: [], explanation: explanation)
+        if raw.contains(where: { $0.trimmingCharacters(in: .whitespaces).uppercased() == "NONE" }) {
+            return .none(explanation)
         }
-        let effective = type ?? (raw.count > 1 ? .multiple : .single)
-        let labels = try validatedSelection(try raw.map { try normalizedLabel($0, for: effective) }, for: effective)
-        return WindowAnswer(options: labels, explanation: explanation,
-                            isMultiple: effective == .multiple || labels.count > 1,
-                            isTrueFalse: effective == .trueFalse)
+        var effective = kind ?? (raw.count > 1 ? .multiple : .single)
+        let values = try validatedSelection(try raw.map { try normalizedLabel($0, for: effective) }, for: effective)
+        if effective == .single, values.count > 1 { effective = .multiple }
+        return WindowAnswer(tag: AnswerTag(kind: effective, values: values), explanation: explanation)
     }
 
-    enum QuestionType: String {
-        case single, multiple, none
-        case trueFalse = "true_false"
-    }
-
-    /// The label set depends on the declared type, so "F" means False only in a
-    /// true/false question and the sixth option otherwise.
-    /// "b", " 3 ", "(C)", "Option 2.", "True" → "B", "3", "C", "2", "T".
-    static func normalizedLabel(_ raw: String, for type: QuestionType) throws -> String {
+    /// The label set depends on the declared kind, so "F" means False only in a
+    /// true/false question. "b", " 3 ", "(C)", "Option 2.", "True" → "B", "3", "C", "2", "T".
+    static func normalizedLabel(_ raw: String, for kind: AnswerKind) throws -> String {
         var label = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if label.hasPrefix("OPTION ") { label.removeFirst(7) }
         label = label.trimmingCharacters(in: CharacterSet(charactersIn: " ().:"))
-        switch type {
-        case .trueFalse:
+        if kind == .trueFalse {
             if label == "TRUE" { label = "T" }
             if label == "FALSE" { label = "F" }
             guard label == "T" || label == "F" else {
-                throw AppError.invalidResponse("Claude returned \(raw) for a true/false question.")
+                throw invalid("Claude returned \(raw) for a true/false question.")
             }
-        case .single, .multiple, .none:
-            guard AppModel.isValidOption(label) else {
-                throw AppError.invalidResponse("Claude returned an unsupported option: \(raw)")
-            }
+            return label
+        }
+        let allowed = AnswerLabels.allowed(for: kind)
+        guard allowed.numbers.contains(label) || allowed.letters.contains(label) else {
+            throw invalid("Claude returned an unsupported option: \(raw)")
         }
         return label
     }
 
-    /// Unique, one label family, in display order, with a count that fits the type.
-    static func validatedSelection(_ labels: [String], for type: QuestionType) throws -> [String] {
+    private static func requireOneFamily(_ labels: [String], for kind: AnswerKind) throws {
+        let allowed = AnswerLabels.allowed(for: kind)
+        guard labels.allSatisfy(allowed.numbers.contains) || labels.allSatisfy(allowed.letters.contains) else {
+            throw invalid("Claude mixed numbered and lettered options: \(labels.joined(separator: ", "))")
+        }
+    }
+
+    /// Unique, one label family, in display order.
+    static func validatedSelection(_ labels: [String], for kind: AnswerKind) throws -> [String] {
         var seen = Set<String>()
         let unique = labels.filter { seen.insert($0).inserted }
-        switch type {
-        case .trueFalse:
-            guard unique.count <= 1 else {
-                throw AppError.invalidResponse("Claude marked both True and False as correct.")
-            }
-            return unique
-        case .single, .multiple, .none:
-            let numbers = unique.allSatisfy { AppModel.numberLabels.contains($0) }
-            let letters = unique.allSatisfy { AppModel.letterLabels.contains($0) }
-            guard numbers || letters else {
-                throw AppError.invalidResponse("Claude mixed numbered and lettered options: \(unique.joined(separator: ", "))")
-            }
-            if type == .single, unique.count > 1 {
-                // Several correct options make it a multiple-response question.
-                appLog.notice("Single-answer question came back with \(unique.count) answers; treating as multiple")
-            }
-            return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        if kind == .trueFalse { return unique }
+        try requireOneFamily(unique, for: kind)
+        return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private static func ordinal(_ n: Int) -> String {
+        let suffix: String
+        switch (n % 10, n % 100) {
+        case (_, 11...13): suffix = "th"
+        case (1, _): suffix = "st"
+        case (2, _): suffix = "nd"
+        case (3, _): suffix = "rd"
+        default: suffix = "th"
         }
+        return "\(n)\(suffix)"
     }
 
     private static func extractJSONObject(from text: String) -> Data? {

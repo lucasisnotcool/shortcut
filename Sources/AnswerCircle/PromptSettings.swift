@@ -23,9 +23,25 @@ enum PromptSettings {
 
     /// Fixed: the app parses this reply.
     static let windowCheckReplyFormat = """
-    Reply with only this JSON object and nothing else. List every visible option, in on-screen order, with is_answer true exactly for the options that should be selected:
-    {"question_type": "single" | "multiple" | "true_false" | "none", "options": [{"option": "<label>", "is_answer": true | false, "reason": "<one short sentence>"}], "explanation": "..."}
-    Decide question_type first; it sets the allowed labels. For "single" and "multiple", use the labels shown on screen (1-8 or A-H). For "true_false", list exactly two options, "T" and "F", with is_answer true for exactly one. Use "none" with an empty options list when you give no answer.
+    Reply with only one JSON object and nothing else. Decide "question_type" first and write it first; it decides the other fields and which labels are valid. Every object ends with "explanation".
+
+    "single", "multiple", "true_false", "dropdown" — list every visible option in on-screen order, with is_answer true exactly for the options to select:
+    {"question_type": "...", "options": [{"option": "<label>", "text": "<option text>", "is_answer": true | false, "reason": "<one short sentence>"}], "explanation": "..."}
+    Labels: 1-8 or A-H as shown for "single" and "multiple"; exactly "T" and "F" for "true_false" (one of them true); for "dropdown", number the options of the open list 1, 2, 3... from the top, with exactly one true.
+
+    "ranking" — every option once, in the required order, first to last:
+    {"question_type": "ranking", "items": [{"option": "<label>", "text": "<option text>"}], "order": ["<label>", ...], "explanation": "..."}
+
+    "matching" — one entry per item, each with its matching choice (a choice may be used more than once; unused choices are left out):
+    {"question_type": "matching", "matches": [{"item": "<item label>", "item_text": "...", "choice": "<choice label>", "choice_text": "...", "reason": "<one short sentence>"}], "explanation": "..."}
+
+    "numeric": {"question_type": "numeric", "value": "<the number as it should be entered>", "unit": "<unit or empty>", "explanation": "..."}
+
+    "fill_blank" — free-text blanks, in order: {"question_type": "fill_blank", "blanks": [{"blank": "1", "answer": "<text to enter>", "reason": "..."}], "explanation": "..."}
+
+    "none": {"question_type": "none", "explanation": "<why no answer>"}
+
+    For ranking and matching, use labels 1-20 or A-T as shown; if the items or choices have no labels, number them 1, 2, 3... (or letter them A, B, C...) in on-screen order, top to bottom.
     """
 
     static let defaultInstructions = """
@@ -41,15 +57,22 @@ enum PromptSettings {
     """
 
     static let defaultWindowCheck = """
-    [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the multiple-choice question visible in it and work out which displayed options are correct. Options are labelled 1-8 or A-H as shown.
+    [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the quiz question visible in it and work out the correct answer.
 
-    Question type: a statement to judge as true or false is "true_false" (use T and F even if the screen shows True/False buttons without labels). Otherwise decide whether the question accepts one option ("single") or several ("multiple"). Use wording such as "select all that apply", "choose two" or "which of the following are", checkbox-style controls, and the facts themselves: if more than one option is correct, it is "multiple". A "multiple" question can still have exactly one correct option.
+    Question type:
+    - "true_false": a statement to judge as true or false (use T and F even if the screen shows True/False buttons without labels).
+    - "single" or "multiple": choose from listed options. Decide whether the question accepts one option or several, using wording such as "select all that apply", "choose two" or "which of the following are", checkbox-style controls, and the facts themselves: if more than one option is correct, it is "multiple". A "multiple" question can still have exactly one correct option.
+    - "dropdown": a fill-in-the-blank whose blank has an open dropdown list. Focus on that blank and treat it as a single-answer question over the options in the list.
+    - "ranking": put the listed options in the order the question asks for (for example: sort, rank, arrange, sequence). Give every option exactly once, first to last.
+    - "matching": pair each item with its choice (for example: match, connect, pair terms with definitions). A choice may fit several items; distractor choices may fit none.
+    - "numeric": the answer is a number to type in; give it in the form and precision the question asks for.
+    - "fill_blank": free-text blanks with no options to choose from.
 
-    Judge each option on its own: restate the question stem, including any negation (NOT, EXCEPT, LEAST, FALSE, incorrect), and decide whether that option satisfies it. For "Which of the following are NOT evidence of X", an option is an answer only if it is not evidence of X; if options 1, 3 and 4 are evidence, the answer is 2 alone.
+    Judge each option or item on its own. Restate the question stem, including any negation (NOT, EXCEPT, LEAST, FALSE, incorrect), and decide whether the option satisfies it. For "Which of the following are NOT evidence of X", an option is an answer only if it is not evidence of X; if options 1, 3 and 4 are evidence, the answer is 2 alone.
 
-    Base every verdict on facts: the reference documents first, since the course's own definitions and conventions take precedence over general opinion, then your own knowledge, and WebSearch only if neither is enough. Do not infer the answer from the interface: ignore options that already look selected, highlighted, ticked or marked correct, and do not let the number of checkboxes suggest how many answers there are.
+    Base every answer on facts: the reference documents first, since the course's own definitions and conventions take precedence over general opinion, then your own knowledge, and WebSearch only if neither is enough. Do not infer the answer from the interface: ignore options that already look selected, highlighted, ticked or marked correct, the current order of a ranking list, pairs already connected on screen, and the number of checkboxes.
 
-    Give no answer (question_type "none") instead of guessing when no multiple-choice question with visible options is on screen, the question is unreadable or cut off, or you cannot determine the answer with confidence, and say briefly why. Otherwise explain in 2-4 sentences so a teacher can verify the reasoning, naming the reference document if one was used. Answer solely from this screenshot; earlier turns are context only.
+    Give no answer ("none") instead of guessing when no quiz question is on screen, the question is unreadable or cut off, the type is not one of the above, or you cannot determine the whole answer with confidence (for matching, every pair; for ranking, the full order), and say briefly why. Otherwise explain in 2-4 sentences so a teacher can verify the reasoning, naming the reference document if one was used. Answer solely from this screenshot; earlier turns are context only.
     """
 
     private static func stored(_ key: String) -> String? {

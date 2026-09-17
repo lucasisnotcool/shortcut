@@ -11,13 +11,14 @@ import Testing
 @Test func parsesStructuredOutput() throws {
     let data = #"{"structured_output":{"selected_option":"B","explanation":"Because B follows."}}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
-    #expect(answer == WindowAnswer(options: ["B"], explanation: "Because B follows."))
+    #expect(answer.tag == AnswerTag(kind: .single, values: ["B"]))
+    #expect(answer.explanation == "Because B follows.")
 }
 
 @Test func parsesStructuredResultString() throws {
     let data = #"{"result":"```json\n{\"selected_option\":\"3\",\"explanation\":\"Three is correct.\"}\n```"}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
-    #expect(answer.options == ["3"])
+    #expect(answer.tag.values == ["3"])
 }
 
 @Test @MainActor func validatesOptions() {
@@ -69,7 +70,8 @@ import Testing
     let data = #"{"structured_output":{"selected_option":"NONE","explanation":"No question visible."}}"#.data(using: .utf8)!
     let answer = try ClaudeOutputParser.windowAnswer(from: data)
     #expect(answer.isNoAnswer)
-    #expect(answer.storageValue == "NONE")
+    #expect(answer.tag.kind == .none)
+    #expect(answer.tag.badgeText == "!")
 }
 
 @Test func extractsResultFromStreamJSON() throws {
@@ -80,7 +82,7 @@ import Testing
 
     """
     let answer = try ClaudeOutputParser.windowAnswer(from: ClaudeOutputParser.resultLine(from: Data(stream.utf8)))
-    #expect(answer == WindowAnswer(options: ["C"], explanation: "From the notes."))
+    #expect(answer.tag == AnswerTag(kind: .single, values: ["C"]))
 }
 
 @Test func buildsInlineImageMessage() throws {
@@ -161,12 +163,10 @@ private func parse(_ json: String) throws -> WindowAnswer {
       {"option":"2","is_answer":false,"reason":"r2"},{"option":"3","is_answer":true,"reason":"r3"}],
      "explanation":"Three apply."}
     """)
-    #expect(answer.options == ["1", "3", "4"])
-    #expect(answer.isMultiple)
-    #expect(answer.storageValue == "1,3,4")
-    #expect(answer.label == "1, 3, 4")
+    #expect(answer.tag == AnswerTag(kind: .multiple, values: ["1", "3", "4"]))
+    #expect(answer.tag.badgeText == "1 3 4")
+    #expect(answer.tag.title == "Answers 1, 3, 4")
     #expect(answer.chatText.contains("**2** ✗  r2"))
-    #expect(WindowAnswer.labels(fromStorage: answer.storageValue) == ["1", "3", "4"])
 }
 
 @Test func negatedMultipleResponseCanHaveOneAnswer() throws {
@@ -176,26 +176,23 @@ private func parse(_ json: String) throws -> WindowAnswer {
       {"option":"3","is_answer":false,"reason":"is evidence"},{"option":"4","is_answer":false,"reason":"is evidence"}],
      "explanation":"Only 2 is NOT evidence."}
     """)
-    #expect(answer.options == ["2"])
-    #expect(answer.isMultiple)
+    #expect(answer.tag == AnswerTag(kind: .multiple, values: ["2"]))
 }
 
 @Test func singleWithSeveralCorrectBecomesMultiple() throws {
     let answer = try parse("""
     {"question_type":"single","options":[{"option":"a","is_answer":true,"reason":""},{"option":"(C)","is_answer":true,"reason":""}],"explanation":"x"}
     """)
-    #expect(answer.options == ["A", "C"])
-    #expect(answer.isMultiple)
+    #expect(answer.tag == AnswerTag(kind: .multiple, values: ["A", "C"]))
 }
 
 @Test func trueFalseUsesItsOwnLabels() throws {
     let answer = try parse("""
     {"question_type":"true_false","options":[{"option":"T","is_answer":false,"reason":"no"},{"option":"False","is_answer":true,"reason":"yes"}],"explanation":"It is false."}
     """)
-    #expect(answer.options == ["F"])
-    #expect(answer.isTrueFalse)
-    #expect(!answer.isMultiple)
-    #expect(answer.label == "False")
+    #expect(answer.tag == AnswerTag(kind: .trueFalse, values: ["F"]))
+    #expect(answer.tag.title == "Answer: False")
+    #expect(answer.tag.badgeText == "F")
     // Both marked correct is rejected.
     #expect(throws: AppError.self) { try parse("""
     {"question_type":"true_false","options":[{"option":"T","is_answer":true,"reason":""},{"option":"F","is_answer":true,"reason":""}],"explanation":"x"}
@@ -226,4 +223,78 @@ private func parse(_ json: String) throws -> WindowAnswer {
 @Test func declinedAnswersHaveNoOptions() throws {
     #expect(try parse(#"{"question_type":"none","options":[],"explanation":"No question."}"#).isNoAnswer)
     #expect(try parse(#"{"question_type":"multiple","options":[{"option":"1","is_answer":false,"reason":""}],"explanation":"x"}"#).isNoAnswer)
+}
+
+@Test func rankingFollowsTheGivenOrder() throws {
+    let answer = try parse("""
+    {"question_type":"ranking","items":[{"option":"1","text":"e"},{"option":"2","text":"b"},{"option":"3","text":"a"},{"option":"4","text":"d"},{"option":"5","text":"c"}],
+     "order":["3","2","5","4","1"],"explanation":"Alphabetical."}
+    """)
+    #expect(answer.tag == AnswerTag(kind: .ranking, values: ["3", "2", "5", "4", "1"]))
+    #expect(answer.tag.badgeText == "3 2 5 4 1")
+    #expect(answer.details.first == "1st  **3**  a")
+    #expect(answer.details.last == "5th  **1**  e")
+    // Repeats, missing items and mixed labels are rejected.
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"ranking","order":["1","1","2"],"explanation":"x"}"#) }
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"ranking","items":[{"option":"1"},{"option":"2"},{"option":"3"}],"order":["1","3"],"explanation":"x"}
+    """) }
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"ranking","order":["1","B"],"explanation":"x"}"#) }
+    // Up to 20 items; numbers may arrive as JSON numbers.
+    let long = try parse(#"{"question_type":"ranking","order":[12,11,10,9,8,7,6,5,4,3,2,1],"explanation":"x"}"#)
+    #expect(long.tag.values.first == "12")
+}
+
+@Test func matchingListsChoicesInItemOrder() throws {
+    let answer = try parse("""
+    {"question_type":"matching","matches":[
+      {"item":"3","item_text":"Nucleus","choice":"A","choice_text":"DNA storage","reason":"r"},
+      {"item":"1","item_text":"Mitochondria","choice":"B","choice_text":"energy","reason":"r"},
+      {"item":"2","item_text":"Chloroplast","choice":"B","choice_text":"energy","reason":"reused"}],
+     "explanation":"x"}
+    """)
+    #expect(answer.tag == AnswerTag(kind: .matching, values: ["B", "B", "A"]))
+    #expect(answer.tag.badgeText == "B B A")
+    #expect(answer.details[0] == "**1** Mitochondria → **B** energy — r")
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"matching","matches":[{"item":"1","choice":"A"},{"item":"1","choice":"B"}],"explanation":"x"}
+    """) }
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"matching","matches":[{"item":"1"}],"explanation":"x"}
+    """) }
+}
+
+@Test func dropdownPicksExactlyOnePosition() throws {
+    let answer = try parse("""
+    {"question_type":"dropdown","options":[{"option":"1","text":"cat","is_answer":false,"reason":""},{"option":"12","text":"dog","is_answer":true,"reason":""}],"explanation":"x"}
+    """)
+    #expect(answer.tag == AnswerTag(kind: .dropdown, values: ["12"]))
+    #expect(answer.tag.badgeText == "12")
+    #expect(answer.details[1] == "**12** ✓ dog —  ")
+    #expect(throws: AppError.self) { try parse("""
+    {"question_type":"dropdown","options":[{"option":"1","is_answer":true},{"option":"2","is_answer":true}],"explanation":"x"}
+    """) }
+}
+
+@Test func numericAndFreeTextAnswers() throws {
+    let number = try parse(#"{"question_type":"numeric","value":"3.14159265","unit":"rad","explanation":"x"}"#)
+    #expect(number.tag == AnswerTag(kind: .numeric, values: ["3.14159265"]))
+    #expect(number.tag.badgeText == "3.14159265")
+    #expect(number.details == ["**3.14159265** rad"])
+    let long = try parse(#"{"question_type":"numeric","value":123456789012,"explanation":"x"}"#)
+    #expect(long.tag.badgeText == "123456789…")
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"numeric","value":"","explanation":"x"}"#) }
+
+    let text = try parse(#"{"question_type":"fill_blank","blanks":[{"blank":"1","answer":"photosynthesis","reason":"r"},{"blank":"2","answer":"glucose"}],"explanation":"x"}"#)
+    #expect(text.tag == AnswerTag(kind: .fillBlank, values: ["photosynthesis", "glucose"]))
+    #expect(text.tag.badgeText == "✎")
+    #expect(text.tag.title == "Fill in 2 blanks")
+    #expect(text.chatText.contains("**Blank 2:** glucose"))
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"fill_blank","blanks":[{"blank":"1","answer":" "}],"explanation":"x"}"#) }
+}
+
+@Test func legacyStoredAnswersStillLoad() {
+    #expect(AnswerTag(legacy: "1,3,4", isMultiple: true, isTrueFalse: false) == AnswerTag(kind: .multiple, values: ["1", "3", "4"]))
+    #expect(AnswerTag(legacy: "F", isMultiple: false, isTrueFalse: true).kind == .trueFalse)
+    #expect(AnswerTag(legacy: "NONE", isMultiple: false, isTrueFalse: false).isNoAnswer)
 }

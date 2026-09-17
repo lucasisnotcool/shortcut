@@ -40,11 +40,17 @@ first for what exists.
    and no `--json-schema`; either difference breaks the cache and adds a turn.
    Images go inline via `--input-format stream-json`.
 4. Source priority in the prompt: documents → on-demand files → own knowledge
-   → web search. Window checks reply with `question_type` (single, multiple,
-   true_false, none) first and a verdict per option; the type decides which
-   labels are valid (1–8 / A–H, or T / F — "F" is ambiguous otherwise), and
-   the answer set is the options marked `is_answer`. The parser still accepts
-   the old `selected_option` format. The instructions and the
+   → web search. Window checks reply with `question_type` first (single,
+   multiple, true_false, dropdown, ranking, matching, numeric, fill_blank,
+   none); the type decides the other fields and the valid labels (1–8 / A–H
+   for choices, 1–20 / A–T for dropdown, ranking and matching, T / F for
+   true/false). `AnswerKind` / `AnswerTag` in WindowAnswer.swift own the
+   badge text, titles and chat header; messages store the tag. The parser
+   still accepts the old `selected_option` format and old saved chats.
+9. The CLI must bill the claude.ai subscription (usage credits cover
+   overflow): `ClaudeService.childEnvironment()` strips API-key, base-URL and
+   cloud-provider variables. `claude auth status` is logged at launch and
+   shown in the main window. The instructions and the
    window-check prompt live in `PromptSettings` (defaults there, user edits in
    `Shortcut.Prompt.*` defaults, editable via Prompts… in the main window);
    the reply format and documents block are not editable. Keep the default

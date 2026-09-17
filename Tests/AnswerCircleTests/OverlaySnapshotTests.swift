@@ -24,30 +24,43 @@ import Testing
         ("answer", {
             $0.messages = [
                 ChatMessage(role: .user, text: "Check the question in the active window.", images: [sample], isWindowCheck: true),
-                ChatMessage(role: .assistant, text: "7 × 8 = 56, which is listed as option B. The other options are common multiplication slips.", images: [], answerOption: "B")
+                ChatMessage(role: .assistant, text: "7 × 8 = 56, which is listed as option B. The other options are common multiplication slips.", images: [], answer: AnswerTag(kind: .single, values: ["B"]))
             ]
         }),
         ("noanswer", {
             $0.messages = [
                 ChatMessage(role: .user, text: "Check the question in the active window.", images: [sample], isWindowCheck: true),
-                ChatMessage(role: .assistant, text: "The window shows a code editor; no multiple-choice question with options is visible.", images: [], answerOption: "NONE")
+                ChatMessage(role: .assistant, text: "The window shows a code editor; no multiple-choice question with options is visible.", images: [], answer: AnswerTag(kind: .none, values: []))
             ]
         }),
         ("mrq", {
-            let answer = WindowAnswer(options: ["1", "3", "4"], explanation: "Options 1, 3 and 4 are all described as evidence in the Week 5 notes; option 2 is a claim, not evidence.", isMultiple: true,
-                                      verdicts: [OptionVerdict(option: "1", isAnswer: true, reason: "Measured data (Week 5)."),
-                                                 OptionVerdict(option: "2", isAnswer: false, reason: "An opinion, not evidence."),
-                                                 OptionVerdict(option: "3", isAnswer: true, reason: "Peer-reviewed study."),
-                                                 OptionVerdict(option: "4", isAnswer: true, reason: "Replicated result.")])
             $0.messages = [
                 ChatMessage(role: .user, text: "Check the question in the active window.", images: [sample], isWindowCheck: true),
-                ChatMessage(role: .assistant, text: answer.chatText, images: [], answerOption: answer.storageValue, answerIsMultiple: true)
+                ChatMessage(role: .assistant, text: "Options 1, 3 and 4 are evidence.\n\n**1** ✓  Measured data.\n**2** ✗  An opinion.\n**3** ✓  Peer-reviewed.\n**4** ✓  Replicated.", images: [], answer: AnswerTag(kind: .multiple, values: ["1", "3", "4"]))
             ]
         }),
         ("truefalse", {
             $0.messages = [
                 ChatMessage(role: .user, text: "Check the question in the active window.", images: [], isWindowCheck: true),
-                ChatMessage(role: .assistant, text: "The notes state the opposite.\n\n**T** ✗  Contradicted by Week 2.\n**F** ✓  Matches Week 2.", images: [], answerOption: "F", answerIsTrueFalse: true)
+                ChatMessage(role: .assistant, text: "The notes state the opposite.\n\n**T** ✗  Contradicted by Week 2.\n**F** ✓  Matches Week 2.", images: [], answer: AnswerTag(kind: .trueFalse, values: ["F"]))
+            ]
+        }),
+        ("ranking", {
+            $0.messages = [
+                ChatMessage(role: .user, text: "Check the question in the active window.", images: [], isWindowCheck: true),
+                ChatMessage(role: .assistant, text: "Alphabetical order.\n\n1st  **3**  a\n2nd  **2**  b\n3rd  **5**  c\n4th  **4**  d\n5th  **1**  e", images: [], answer: AnswerTag(kind: .ranking, values: ["3", "2", "5", "4", "1"]))
+            ]
+        }),
+        ("matching", {
+            $0.messages = [
+                ChatMessage(role: .user, text: "Check the question in the active window.", images: [], isWindowCheck: true),
+                ChatMessage(role: .assistant, text: "Organelle functions.\n\n**1** Mitochondria → **B** energy\n**2** Ribosome → **D** proteins\n**3** Nucleus → **A** DNA\n**4** Golgi → **C** packaging", images: [], answer: AnswerTag(kind: .matching, values: ["B", "D", "A", "C"]))
+            ]
+        }),
+        ("fillblank", {
+            $0.messages = [
+                ChatMessage(role: .user, text: "Check the question in the active window.", images: [], isWindowCheck: true),
+                ChatMessage(role: .assistant, text: "From the Week 3 notes.\n\n**Blank 1:** photosynthesis\n**Blank 2:** glucose", images: [], answer: AnswerTag(kind: .fillBlank, values: ["photosynthesis", "glucose"]))
             ]
         }),
         ("pasted", {
@@ -92,7 +105,7 @@ import Testing
         ChatMessage(role: .user, text: "Which reference files are loaded?", images: []),
         ChatMessage(role: .assistant, text: "**Embedded reference documents: 3**\n\nBiology/Week 1 notes.pdf\n…", images: []),
         ChatMessage(role: .user, text: "Check the question in the active window.", images: [shot], isWindowCheck: true),
-        ChatMessage(role: .assistant, text: "The Week 1 notes define the mitochondrion as the site of aerobic respiration, which matches option C.", images: [], answerOption: "C")
+        ChatMessage(role: .assistant, text: "The Week 1 notes define the mitochondrion as the site of aerobic respiration, which matches option C.", images: [], answer: AnswerTag(kind: .single, values: ["C"]))
     ]
     let hosting = NSHostingView(rootView: MainView(model: model))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 700),
@@ -128,7 +141,7 @@ import Testing
 
 @Test @MainActor func renderMenuBarBadges() throws {
     guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
-    let texts: [String?] = [nil, "B", "F", "!", "×", "1 3 4", "A C", "1 2 3 4 5 6"]
+    let texts: [String?] = [nil, "B", "12", "!", "×", "✎", "1 3 4", "3 2 5 4 1", "B D A C", "3.14159265", "123456789…"]
     let images = texts.map(StatusItemController.badgeImage(text:))
     let width = images.reduce(CGFloat(10)) { $0 + $1.size.width + 10 }
     let canvas = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in

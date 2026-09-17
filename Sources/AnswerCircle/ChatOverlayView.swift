@@ -214,9 +214,8 @@ struct ReplyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let stored = message.answerOption {
-                AnswerHeader(labels: WindowAnswer.labels(fromStorage: stored), isMultiple: message.answerIsMultiple,
-                             isTrueFalse: message.answerIsTrueFalse)
+            if let answer = message.answer {
+                AnswerHeader(answer: answer)
             }
             Text(Self.markdown(message.text))
                 .font(.system(size: 13.5))
@@ -251,44 +250,30 @@ struct ReplyView: View {
     }
 }
 
-/// One outlined circle per selected option, or "!" when Claude gave no answer.
+/// One outlined circle per selected option, a capsule for sequences and
+/// values, or "!" when Claude gave no answer.
 struct AnswerHeader: View {
-    let labels: [String]
-    let isMultiple: Bool
-    var isTrueFalse = false
-
-    private var title: String {
-        switch labels.count {
-        case 0: return "No answer"
-        case 1: return isTrueFalse ? "Answer: \(WindowAnswer.trueFalseWord(labels[0]))" : "Answer \(labels[0])"
-        default: return "Answers \(labels.joined(separator: ", "))"
-        }
-    }
-
-    private var subtitle: String {
-        if labels.isEmpty { return "Claude could not confirm a question and answer" }
-        if isTrueFalse { return "True/false question" }
-        if isMultiple {
-            return labels.count == 1
-                ? "Multiple-response question · only this option is correct"
-                : "Multiple-response question · select all \(labels.count)"
-        }
-        return "From the active window"
-    }
+    let answer: AnswerTag
 
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 5) {
-                ForEach(labels.isEmpty ? ["!"] : labels, id: \.self) { label in
-                    Text(label)
+                ForEach(Array(answer.headerTokens.enumerated()), id: \.offset) { _, token in
+                    Text(token)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .frame(width: 32, height: 32)
-                        .overlay(Circle().stroke(Color.primary.opacity(0.7), lineWidth: 1.2))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, token.count > 1 ? 12 : 0)
+                        .frame(minWidth: 32, minHeight: 32)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .circular).strokeBorder(Color.primary.opacity(0.7), lineWidth: 1.2))
                 }
             }
+            .padding(1)
+            .fixedSize()
+            .layoutPriority(1)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(answer.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                Text(answer.subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
     }
