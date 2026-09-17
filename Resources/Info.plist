@@ -6,6 +6,8 @@
     <string>Shortcut</string>
     <key>CFBundleExecutable</key>
     <string>Shortcut</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>local.lohzh.AnswerCircle</string>
     <key>CFBundleInfoDictionaryVersion</key>

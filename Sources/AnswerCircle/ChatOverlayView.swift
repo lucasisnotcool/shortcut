@@ -367,17 +367,21 @@ private struct ResponseHeightKey: PreferenceKey {
 }
 
 extension View {
-    /// Liquid Glass on macOS 26+, translucent material before that.
+    /// Liquid Glass on macOS 26+, translucent material before that. The tint
+    /// must stay strong: with clear glass, dark-mode (white) text vanished over
+    /// a white window, and light-mode text over a dark one.
     @ViewBuilder
     func overlayGlass(cornerRadius: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let tint = Color(nsColor: .windowBackgroundColor).opacity(0.72)
         if #available(macOS 26.0, *) {
             self
-                .background(Color(nsColor: .windowBackgroundColor).opacity(0.18), in: shape)
-                .glassEffect(.clear, in: shape)
+                .background(tint, in: shape)
+                .glassEffect(.regular, in: shape)
         } else {
             self
-                .background(.ultraThinMaterial, in: shape)
+                .background(tint, in: shape)
+                .background(.regularMaterial, in: shape)
                 .overlay(shape.stroke(Color.white.opacity(0.22), lineWidth: 0.5))
         }
     }

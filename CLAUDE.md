@@ -2,8 +2,12 @@
 
 Shortcut is a private macOS menu-bar assistant for teaching: it checks the
 multiple-choice question on screen against the course materials while Lucas
-presents. It is built, signed and in daily use on this Mac. Read README.md
+presents. It is built, signed and in daily use on Lucas's Mac. Read README.md
 first for what exists.
+
+**Setting Shortcut up for someone else, or on another Mac?** Read AGENTS.md
+first: it is personal-use software, and the guide says what to ask the user,
+how to build and grant permissions, and how to test it with them.
 
 ## Orientation
 
@@ -19,6 +23,8 @@ first for what exists.
 - Relaunch: `osascript -e 'quit app id "local.lohzh.AnswerCircle"'; open dist/Shortcut.app`.
   The bundle id stays `local.lohzh.AnswerCircle` so existing grants and
   defaults survive.
+- Icon: `Resources/AppIcon.icns`, drawn by `scripts/make-icon.swift`;
+  regenerate with `./scripts/make-icon.sh`.
 - Tests: `swift test`. `SHORTCUT_SNAPSHOT_DIR=<dir>` renders the overlay and
   main window to PNGs; `SHORTCUT_CONTEXT_DIR=<folder>` prints a readiness
   report for a real reference folder.

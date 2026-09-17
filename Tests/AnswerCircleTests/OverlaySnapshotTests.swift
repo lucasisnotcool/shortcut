@@ -74,9 +74,12 @@ import Testing
         configure(model)
         var measured: CGFloat = 0
         let view = ChatOverlayView(model: model, onHeightChange: { measured = $0 })
-        let hosting = NSHostingView(rootView: view.padding(30).background(Color(nsColor: .systemOrange).opacity(0.35)))
+        // Dark mode over white is the worst case for the translucent card.
+        let hosting = NSHostingView(rootView: view.padding(30).background(Color.white).environment(\.colorScheme, .dark))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: ChatOverlayView.width + 60, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .darkAqua)
+        hosting.appearance = window.appearance
         window.contentView = hosting
         for _ in 0..<5 {
             hosting.layoutSubtreeIfNeeded()

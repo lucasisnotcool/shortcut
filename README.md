@@ -29,6 +29,10 @@ A private, native macOS menu-bar assistant backed by the locally installed Claud
 - **Prompts…** (chat header in the main window) shows what is sent to Claude and lets you edit the Session Instructions (system prompt, after the reference documents) and the Window Check prompt. Edits apply from the next request without a reset; the JSON reply format and the generated documents stay fixed. **Restore Default** undoes an edit. The exact system prompt of the latest request is at `~/Library/Application Support/AnswerCircle/system-prompt.md`.
 - Click the menu-bar circle for the last answer and its explanation (or the error, if a check failed), plus Open Chat, Check Active Window, Settings, and Quit.
 
+## Setting it up on your Mac
+
+Shortcut is personal-use software: each person builds it from source on their own Mac, and it runs on their own claude.ai subscription. The easiest way to set it up is to open this repo in Claude Code (or another coding agent) and ask it to set Shortcut up for you. [AGENTS.md](AGENTS.md) tells the agent what to confirm with you, how to build and sign the app, which permissions you need to grant, and how to test it with you. The steps below are the manual version.
+
 ## Build and run
 
 Requires macOS 14 or later, Xcode command-line tools, and an authenticated `claude` CLI.
@@ -37,6 +41,8 @@ Requires macOS 14 or later, Xcode command-line tools, and an authenticated `clau
 ./scripts/build-app.sh
 open "dist/Shortcut.app"
 ```
+
+The app icon is drawn by `scripts/make-icon.swift`; `./scripts/make-icon.sh` regenerates `Resources/AppIcon.icns`.
 
 For permissions to survive rebuilds, run `./scripts/setup-signing.sh` once before building. It creates a self-signed "Shortcut Local Signing" identity in a dedicated keychain. Without it, the build falls back to an ad-hoc signature whose requirement is just the bundle identifier.
 

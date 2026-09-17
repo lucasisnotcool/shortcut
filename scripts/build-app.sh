@@ -15,6 +15,7 @@ BUNDLE_ID="local.lohzh.AnswerCircle"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$PROJECT_DIR/.build/release/Shortcut" "$MACOS_DIR/Shortcut"
 cp "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
+cp "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
 # macOS ties Screen Recording / Accessibility grants to the app's designated
 # requirement. A plain ad-hoc signature changes it on every build, which
