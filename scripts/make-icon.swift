@@ -1,8 +1,24 @@
-// Draws the app icon (Resources/AppIcon.icns): the Shortcut ring mark with a
-// check, monochrome on a dark squircle. Run via scripts/make-icon.sh.
+// Draws the app icon (Resources/AppIcon.icns): two Option (⌥) glyphs, the
+// right one mirrored, joined along the bottom into one mark, monochrome on a
+// dark squircle. Run via scripts/make-icon.sh.
 import AppKit
 
 let outputDirectory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+
+/// ⌥ drawn in `rect` (y up); `mirrored` flips it horizontally.
+func optionGlyph(in rect: CGRect, mirrored: Bool) -> NSBezierPath {
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+        CGPoint(x: rect.minX + (mirrored ? 1 - x : x) * rect.width, y: rect.minY + y * rect.height)
+    }
+    let path = NSBezierPath()
+    path.move(to: point(0, 1))
+    path.line(to: point(0.36, 1))
+    path.line(to: point(0.66, 0))
+    path.line(to: point(1, 0))
+    path.move(to: point(0.60, 1))
+    path.line(to: point(1, 1))
+    return path
+}
 
 func drawIcon(pixels: Int) -> Data {
     let rep = NSBitmapImageRep(
@@ -36,32 +52,17 @@ func drawIcon(pixels: Int) -> Data {
     rim.lineWidth = 4
     rim.stroke()
 
-    let center = CGPoint(x: 512, y: 512)
-    let radius: CGFloat = 250
-
-    // Faint full ring, then the bright sweep the menu-bar mark shows while busy.
-    let ring = NSBezierPath()
-    ring.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-    ring.lineWidth = 34
-    NSColor(white: 1, alpha: 0.22).setStroke()
-    ring.stroke()
-
-    let sweep = NSBezierPath()
-    sweep.appendArc(withCenter: center, radius: radius, startAngle: 90, endAngle: -30, clockwise: true)
-    sweep.lineWidth = 40
-    sweep.lineCapStyle = .round
-    NSColor.white.setStroke()
-    sweep.stroke()
-
-    let check = NSBezierPath()
-    check.move(to: CGPoint(x: 405, y: 515))
-    check.line(to: CGPoint(x: 483, y: 432))
-    check.line(to: CGPoint(x: 628, y: 598))
-    check.lineWidth = 50
-    check.lineCapStyle = .round
-    check.lineJoinStyle = .round
-    NSColor.white.setStroke()
-    check.stroke()
+    // The two gestures' key: ⌥ and its mirror image, bottom strokes meeting.
+    let width: CGFloat = 300, height: CGFloat = 200
+    let left = CGRect(x: 512 - width, y: 512 - height / 2, width: width, height: height)
+    for (rect, mirrored) in [(left, false), (left.offsetBy(dx: width, dy: 0), true)] {
+        let glyph = optionGlyph(in: rect, mirrored: mirrored)
+        glyph.lineWidth = 46
+        glyph.lineCapStyle = .round
+        glyph.lineJoinStyle = .round
+        NSColor.white.setStroke()
+        glyph.stroke()
+    }
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

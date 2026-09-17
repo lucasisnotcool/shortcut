@@ -1,6 +1,10 @@
 # Shortcut
 
-A private, native macOS menu-bar assistant backed by the locally installed Claude CLI.
+A private, native macOS menu-bar assistant backed by the locally installed Claude CLI. While you present a quiz, it reads the question on screen, answers it from your course files, and shows the answer to you alone in the menu bar.
+
+![A demo quiz question on the left and Shortcut's answer, B, with its reasoning on the right](docs/images/check-single.png)
+
+**[See what it does, with screenshots of every question type →](docs/FEATURES.md)** (all demo content)
 
 ## Interactions
 
@@ -26,31 +30,32 @@ A private, native macOS menu-bar assistant backed by the locally installed Claud
 
   Claude judges every option against the question as worded (so "Which are NOT…" is handled per option, and a multiple-response question can have a single answer), bases the answer on the course files, then its own knowledge, then web search, and ignores what is already ticked, highlighted, ordered or connected on screen. The chat and the badge menu show the working: ✓/✗ per option, the ranked list, the pairs, or the text per blank.
 - Shortcut's gestures are private to it: bare Option taps that form a gesture, and everything typed or pasted into the overlay (including ⌘ and ⇧), never reach the app or web page underneath. Option used with another key, click or scroll is passed through unchanged. This needs the Accessibility permission.
-- **Prompts…** (chat header in the main window) shows what is sent to Claude and lets you edit the Session Instructions (system prompt, after the reference documents) and the Window Check prompt. Edits apply from the next request without a reset; the JSON reply format and the generated documents stay fixed. **Restore Default** undoes an edit. The exact system prompt of the latest request is at `~/Library/Application Support/AnswerCircle/system-prompt.md`.
-- Click the menu-bar circle for the last answer and its explanation (or the error, if a check failed), plus Open Chat, Check Active Window, Settings, and Quit.
+- **Prompts…** (chat header in the main window) shows what is sent to Claude and lets you edit the Session Instructions (system prompt, after the reference documents) and the Window Check prompt. Edits apply from the next request without a reset; the JSON reply format and the generated documents stay fixed. **Restore Default** undoes an edit. The exact system prompt of the latest request is at `~/Library/Application Support/Shortcut/system-prompt.md`.
+- Click the menu-bar circle for the last answer and its explanation (or the error, if a check failed), plus Open Chat, Check Active Window, Settings, Check for Updates, and Quit.
 
-## Setting it up on your Mac
+## Install
 
-Shortcut is personal-use software: each person builds it from source on their own Mac, and it runs on their own claude.ai subscription. The easiest way to set it up is to open this repo in Claude Code (or another coding agent) and ask it to set Shortcut up for you. [AGENTS.md](AGENTS.md) tells the agent what to confirm with you, how to build and sign the app, which permissions you need to grant, and how to test it with you. The steps below are the manual version.
+**[Download the latest DMG](https://github.com/lucasisnotcool/shortcut/releases/latest)**, drag Shortcut to Applications, and follow **[INSTALL.md](INSTALL.md)**. You need macOS 14 or later and a claude.ai Pro or Max plan. The app isn't notarized, so the first launch needs **Open Anyway** in Privacy & Security. After that, a **Finish setting up** checklist in the app installs and signs in to Claude Code and asks for the two permissions.
 
-## Build and run
+Shortcut is free, personal-use software with no support. It is meant for teaching staff checking questions they present, not for answering an assessment you are taking.
 
-Requires macOS 14 or later, Xcode command-line tools, and an authenticated `claude` CLI.
+## Build from source
+
+Requires macOS 14 or later and Xcode 26 or later (the overlay uses the macOS 26 SDK).
 
 ```sh
-./scripts/build-app.sh
-open "dist/Shortcut.app"
+./scripts/setup-signing.sh      # once: self-signed identity so permissions survive rebuilds
+./scripts/build-app.sh          # → dist/Shortcut.app (add --universal for arm64 + x86_64)
+open dist/Shortcut.app
 ```
+
+Without `setup-signing.sh`, the build falls back to an ad-hoc signature whose requirement is just the bundle identifier. A coding agent can do the whole setup with you: [AGENTS.md](AGENTS.md) tells it what to confirm, build, grant and test. `./scripts/make-dmg.sh` packages the app; [RELEASING.md](RELEASING.md) covers releases.
 
 The app icon is drawn by `scripts/make-icon.swift`; `./scripts/make-icon.sh` regenerates `Resources/AppIcon.icns`.
 
-For permissions to survive rebuilds, run `./scripts/setup-signing.sh` once before building. It creates a self-signed "Shortcut Local Signing" identity in a dedicated keychain. Without it, the build falls back to an ad-hoc signature whose requirement is just the bundle identifier.
+If a window check fails, the menu-bar menu shows the reason. Logs: `log stream --predicate 'subsystem == "io.github.lucasisnotcool.shortcut"'`.
 
-On first launch, click the orange permission badges in the main window to grant Accessibility and Screen Recording. macOS may require relaunching the app after permission changes.
-
-If a window check fails, the menu-bar menu shows the reason. Logs: `log stream --predicate 'subsystem == "local.lohzh.Shortcut"'`.
-
-For hands-free QC, launch with `open --env SHORTCUT_QC=1 dist/Shortcut.app`, then trigger gestures with `osascript -l JavaScript -e 'ObjC.import("Foundation"); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately("local.lohzh.Shortcut.qc.capture", $(), $(), true)'` (also `.qc.chat`, `.qc.close`, `.qc.verify`).
+For hands-free QC, launch with `open --env SHORTCUT_QC=1 dist/Shortcut.app`, then trigger gestures with `osascript -l JavaScript -e 'ObjC.import("Foundation"); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately("io.github.lucasisnotcool.shortcut.qc.capture", $(), $(), true)'` (also `.qc.chat`, `.qc.close`, `.qc.verify`).
 
 Run tests with:
 
@@ -68,4 +73,10 @@ Shortcut runs the Claude CLI signed in with your claude.ai account (the main win
 
 ## Privacy and security
 
-Claude runs with only `Read`, `WebSearch` and `WebFetch`, read access limited to the reference folders (`--add-dir`), and customizations disabled (`--safe-mode`). The contents of the reference folders, pasted images, the conversation and active-window screenshots are sent to Claude. Captures are deleted after each request; the conversation (with downscaled images) is kept in `~/Library/Application Support/AnswerCircle/Conversation` until you reset it.
+Claude runs with only `Read`, `WebSearch` and `WebFetch`, read access limited to the reference folders (`--add-dir`), and customizations disabled (`--safe-mode`). The contents of the reference folders, pasted images, the conversation and active-window screenshots are sent to Claude. Captures are deleted after each request; the conversation (with downscaled images) is kept in `~/Library/Application Support/Shortcut/Conversation` until you reset it.
+
+Apart from Claude, Shortcut contacts only GitHub's public releases API, once a day, to check for a new version (turn off **Check Automatically** in the menu-bar menu). It sends no information about you.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Shortcut is not affiliated with Anthropic.

@@ -16,6 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        let isQC = ProcessInfo.processInfo.environment["SHORTCUT_QC"] == "1"
+        if !isQC {
+            if SetupAssistant.offerMoveToApplicationsIfNeeded() { return }
+            guard SetupAssistant.showWelcomeIfNeeded() else {
+                NSApp.terminate(nil)
+                return
+            }
+        }
 
         let overlay = OverlayPanelController(model: model)
         overlayController = overlay
@@ -45,12 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        if ProcessInfo.processInfo.environment["SHORTCUT_QC"] == "1" {
+        if isQC {
             installQCTriggers()
         }
 
         model.refreshPermissionState()
         showMainWindow()
+        model.checkForUpdatesIfDue()
     }
 
     /// Opt-in test hooks (launch with `open --env SHORTCUT_QC=1`) so both
@@ -58,12 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installQCTriggers() {
         let center = DistributedNotificationCenter.default()
         let triggers: [(String, @MainActor (AppDelegate) -> Void)] = [
-            ("local.lohzh.Shortcut.qc.chat", { $0.showOverlay() }),
-            ("local.lohzh.Shortcut.qc.capture", { $0.answerCurrentWindow() }),
-            ("local.lohzh.Shortcut.qc.close", { $0.overlayController?.close() }),
-            ("local.lohzh.Shortcut.qc.verify", { $0.model.verifyContext() })
+            ("chat", { $0.showOverlay() }),
+            ("capture", { $0.answerCurrentWindow() }),
+            ("close", { $0.overlayController?.close() }),
+            ("verify", { $0.model.verifyContext() })
         ]
-        for (name, action) in triggers {
+        for (suffix, action) in triggers {
+            let name = "\(AppIdentity.bundleID).qc.\(suffix)"
             qcObservers.append(center.addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
@@ -90,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Picks up permission changes made in System Settings.
         model.refreshPermissionState()
         shortcutMonitor?.start()
+        model.checkForUpdatesIfDue()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -50,7 +50,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var screenRecordingGranted = false
     @Published private(set) var claudeExecutableFound = false
-    @Published private(set) var claudeAccount: String?
+    @Published private(set) var claudeAccount: ClaudeAccount?
+    @Published private(set) var availableUpdate: AvailableUpdate?
 
     private let claude = ClaudeService()
     private let capture = ScreenCaptureService()
@@ -67,7 +68,12 @@ final class AppModel: ObservableObject {
         claudeExecutableFound = ClaudeService.locateExecutable() != nil
         loadRoots()
         refreshContext()
-        Task { claudeAccount = await ClaudeService.accountSummary() }
+        refreshClaudeAccount()
+    }
+
+    var isSetUp: Bool {
+        claudeExecutableFound && claudeAccount?.usesSubscription == true
+            && accessibilityGranted && screenRecordingGranted
     }
 
     // MARK: Permissions
@@ -75,8 +81,14 @@ final class AppModel: ObservableObject {
     func refreshPermissionState() {
         accessibilityGranted = AXIsProcessTrusted()
         screenRecordingGranted = CGPreflightScreenCaptureAccess()
-        claudeExecutableFound = ClaudeService.locateExecutable() != nil
+        let found = ClaudeService.locateExecutable() != nil
+        if found != claudeExecutableFound || claudeAccount?.usesSubscription == false { refreshClaudeAccount() }
+        claudeExecutableFound = found
         appLog.info("Permissions: accessibility=\(self.accessibilityGranted) screenRecording=\(self.screenRecordingGranted) claude=\(self.claudeExecutableFound)")
+    }
+
+    func refreshClaudeAccount() {
+        Task { claudeAccount = await ClaudeService.account() }
     }
 
     func requestAccessibilityPermission() {
@@ -88,6 +100,42 @@ final class AppModel: ObservableObject {
     func requestScreenRecordingPermission() {
         _ = CGRequestScreenCaptureAccess()
         schedulePermissionRefresh()
+    }
+
+    // MARK: Updates
+
+    func checkForUpdatesIfDue() {
+        guard UpdateChecker.isDue else { return }
+        checkForUpdates(userInitiated: false)
+    }
+
+    /// A user-initiated check reports the result in an alert.
+    func checkForUpdates(userInitiated: Bool) {
+        Task {
+            let alert = NSAlert()
+            do {
+                availableUpdate = try await UpdateChecker.latest()
+                if let availableUpdate {
+                    appLog.notice("Update available: \(availableUpdate.version, privacy: .public)")
+                    alert.messageText = "Shortcut \(availableUpdate.version) is available"
+                    alert.informativeText = "You have \(AppIdentity.version). Download the new disk image and replace the app in Applications; your settings and permissions carry over."
+                    alert.addButton(withTitle: "Download…")
+                    alert.addButton(withTitle: "Later")
+                } else {
+                    alert.messageText = "Shortcut \(AppIdentity.version) is the latest version"
+                }
+            } catch {
+                appLog.error("Update check failed: \(error.localizedDescription, privacy: .public)")
+                alert.messageText = "Couldn't check for updates"
+                alert.informativeText = error.localizedDescription
+            }
+            guard userInitiated || availableUpdate != nil && !UpdateChecker.hasAnnounced(availableUpdate!) else { return }
+            if let availableUpdate { UpdateChecker.markAnnounced(availableUpdate) }
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn, let availableUpdate {
+                NSWorkspace.shared.open(availableUpdate.pageURL)
+            }
+        }
     }
 
     // MARK: Context
@@ -322,8 +370,7 @@ final class ConversationStore {
     }
 
     static var defaultDirectory: URL? {
-        try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("AnswerCircle/Conversation", isDirectory: true)
+        try? AppIdentity.supportDirectory().appendingPathComponent("Conversation", isDirectory: true)
     }
 
     private var indexURL: URL? { directory?.appendingPathComponent("messages.json") }

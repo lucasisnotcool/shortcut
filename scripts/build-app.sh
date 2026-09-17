@@ -1,25 +1,38 @@
 #!/bin/zsh
+# Builds dist/Shortcut.app.
+#   --universal   Apple silicon + Intel (release builds); default is this Mac's arch.
+# SHORTCUT_VERSION=1.2.0 stamps a version into the bundle instead of Info.plist's.
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
 cd "$PROJECT_DIR"
 
-swift build -c release --disable-sandbox
+ARCH_FLAGS=()
+[[ "${1:-}" == "--universal" ]] && ARCH_FLAGS=(--arch arm64 --arch x86_64)
+
+swift build -c release --disable-sandbox "${ARCH_FLAGS[@]}"
+BIN_DIR="$(swift build -c release --show-bin-path "${ARCH_FLAGS[@]}")"
 
 APP_DIR="$PROJECT_DIR/dist/Shortcut.app"
 CONTENTS_DIR="$APP_DIR/Contents"
-MACOS_DIR="$CONTENTS_DIR/MacOS"
-RESOURCES_DIR="$CONTENTS_DIR/Resources"
-BUNDLE_ID="local.lohzh.AnswerCircle"
+PLIST="$CONTENTS_DIR/Info.plist"
 
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-cp "$PROJECT_DIR/.build/release/Shortcut" "$MACOS_DIR/Shortcut"
-cp "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
-cp "$PROJECT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+/bin/rm -rf "$APP_DIR"
+mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
+cp "$BIN_DIR/Shortcut" "$CONTENTS_DIR/MacOS/Shortcut"
+cp "$PROJECT_DIR/Resources/Info.plist" "$PLIST"
+cp "$PROJECT_DIR/Resources/AppIcon.icns" "$CONTENTS_DIR/Resources/AppIcon.icns"
+
+if [[ -n "${SHORTCUT_VERSION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $SHORTCUT_VERSION" "$PLIST"
+fi
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
 
 # macOS ties Screen Recording / Accessibility grants to the app's designated
-# requirement. A plain ad-hoc signature changes it on every build, which
-# silently revokes the grants while System Settings still shows them enabled.
+# requirement. With the certificate-backed identity that is "this bundle id,
+# signed by this certificate", so every release keeps the grants. A plain
+# ad-hoc signature changes it on every build, which silently revokes them.
 IDENTITY="Shortcut Local Signing"
 KEYCHAIN="$HOME/Library/Keychains/shortcut-signing.keychain-db"
 PASSWORD_FILE="$HOME/Library/Application Support/ShortcutSigning/keychain-password"
@@ -33,9 +46,4 @@ else
     echo "Signed ad-hoc with a stable requirement (run scripts/setup-signing.sh for a certificate-backed identity)."
 fi
 
-LEGACY_APP_DIR="$PROJECT_DIR/dist/Answer Circle.app"
-if [[ -d "$LEGACY_APP_DIR" ]]; then
-    /bin/rm -rf "$LEGACY_APP_DIR"
-fi
-
-echo "$APP_DIR"
+echo "Shortcut $VERSION ($(lipo -archs "$CONTENTS_DIR/MacOS/Shortcut")): $APP_DIR"

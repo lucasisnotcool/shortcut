@@ -61,6 +61,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        if let update = model.availableUpdate {
+            menu.addItem(item("Download Shortcut \(update.version)…", action: #selector(openUpdate)))
+            menu.addItem(.separator())
+        }
         menu.addItem(item("Open Chat", hint: "⌥ ⌥", action: #selector(openChat)))
         menu.addItem(item("Check Active Window", hint: "⌥ + ⌥", action: #selector(checkWindow)))
         if model.badgeState != .idle && model.badgeState != .loading {
@@ -68,6 +72,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(item("Shortcut Settings…", action: #selector(openMain)))
+        menu.addItem(item("Check for Updates…", action: #selector(checkForUpdates)))
+        let automatic = item("Check Automatically", action: #selector(toggleAutomaticUpdates))
+        automatic.state = UpdateChecker.checksAutomatically ? .on : .off
+        automatic.indentationLevel = 1
+        menu.addItem(automatic)
+        menu.addItem(.separator())
         menu.addItem(item("Quit Shortcut", action: #selector(quitApp)))
     }
 
@@ -101,6 +111,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func checkWindow() { actions.checkWindow() }
     @objc private func clearBadge() { model.clearBadge() }
     @objc private func quitApp() { NSApp.terminate(nil) }
+    @objc private func checkForUpdates() { model.checkForUpdates(userInitiated: true) }
+    @objc private func toggleAutomaticUpdates() { UpdateChecker.checksAutomatically.toggle() }
+    @objc private func openUpdate() {
+        if let update = model.availableUpdate { NSWorkspace.shared.open(update.pageURL) }
+    }
 
     // MARK: Badge
 

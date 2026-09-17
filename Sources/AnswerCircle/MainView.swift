@@ -34,7 +34,14 @@ private struct ContextSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            permissionStrip
+            if let update = model.availableUpdate {
+                UpdateBanner(update: update)
+            }
+            if model.isSetUp {
+                permissionStrip
+            } else {
+                SetupChecklist(model: model)
+            }
             Divider()
             HStack {
                 Text("Reference folders").font(.headline)
@@ -71,7 +78,7 @@ private struct ContextSidebar: View {
                 Text("Shortcut").font(.title3.weight(.semibold))
                 Text("Claude · \(ClaudeService.modelDisplayName)").font(.caption).foregroundStyle(.secondary)
                 if let account = model.claudeAccount {
-                    Text(account).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(account.summary).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         .help("Usage beyond the plan's limits uses your Claude usage credits, if enabled in claude.ai Settings › Usage.")
                 }
             }
@@ -396,6 +403,93 @@ private struct ChatPane: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
+    }
+}
+
+// MARK: - Setup
+
+/// Shown until the CLI, the account and both permissions are ready.
+private struct SetupChecklist: View {
+    @ObservedObject var model: AppModel
+
+    private var signedIn: Bool { model.claudeAccount?.usesSubscription == true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Finish setting up").font(.headline)
+                Spacer()
+                Button {
+                    model.refreshPermissionState()
+                    model.refreshClaudeAccount()
+                } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.borderless)
+                .help("Check again")
+            }
+            SetupStep(number: 1, title: "Install Claude Code",
+                      detail: "Shortcut runs the Claude CLI on your Mac.",
+                      done: model.claudeExecutableFound,
+                      actionTitle: "Install…", action: SetupAssistant.installClaude)
+            SetupStep(number: 2, title: "Sign in to Claude",
+                      detail: model.claudeAccount.map { signedIn ? $0.summary : "\($0.summary). A claude.ai Pro or Max plan is required." }
+                          ?? "Uses your claude.ai subscription.",
+                      done: signedIn,
+                      actionTitle: "Sign In…", action: SetupAssistant.signInToClaude)
+                .disabled(!model.claudeExecutableFound)
+            SetupStep(number: 3, title: "Allow Accessibility",
+                      detail: "For the Option-key gestures.",
+                      done: model.accessibilityGranted,
+                      actionTitle: "Allow…", action: model.requestAccessibilityPermission)
+            SetupStep(number: 4, title: "Allow Screen Recording",
+                      detail: "To read the question in the active window. macOS may ask to reopen Shortcut.",
+                      done: model.screenRecordingGranted,
+                      actionTitle: "Allow…", action: model.requestScreenRecordingPermission)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+}
+
+private struct SetupStep: View {
+    let number: Int
+    let title: String
+    let detail: String
+    let done: Bool
+    let actionTitle: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(number).circle")
+                .font(.system(size: 15))
+                .foregroundStyle(done ? .secondary : .primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.medium))
+                    .foregroundStyle(done ? .secondary : .primary)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            if !done {
+                Button(actionTitle, action: action).controlSize(.small)
+            }
+        }
+    }
+}
+
+private struct UpdateBanner: View {
+    let update: AvailableUpdate
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.down.circle")
+            Text("Shortcut \(update.version) is available").font(.callout.weight(.medium))
+            Spacer()
+            Button("Download…") { NSWorkspace.shared.open(update.pageURL) }
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.25)))
     }
 }
 

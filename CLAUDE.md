@@ -14,24 +14,37 @@ how to build and grant permissions, and how to test it with them.
 - App: SwiftPM package, SwiftUI + AppKit, zero dependencies. The target and
   test target are still named `AnswerCircle` (the original name); the product,
   executable and bundle are `Shortcut`.
-- Build: `./scripts/build-app.sh` → `dist/Shortcut.app`, signed with the
+- Distribution: public GitHub repo, signed DMG on GitHub Releases
+  (INSTALL.md for users, RELEASING.md for cutting a release with
+  `scripts/release.sh X.Y.Z`). Releases must be signed with the same
+  "Shortcut Local Signing" certificate every time, or users lose their
+  permissions. CI (`.github/workflows/ci.yml`) tests and builds unsigned.
+- First run for downloaded copies: `SetupAssistant` (welcome notice, move
+  out of the DMG, Claude CLI install and sign-in through `.command` files in
+  Terminal) and the **Finish setting up** checklist in the sidebar.
+  `UpdateChecker` polls the public releases API daily and never downloads.
+- Build: `./scripts/build-app.sh [--universal]` → `dist/Shortcut.app`, signed with the
   self-signed "Shortcut Local Signing" identity from
   `scripts/setup-signing.sh` (dedicated keychain
   `~/Library/Keychains/shortcut-signing.keychain-db`). Never ship an ad-hoc
   build: macOS keys the Screen Recording and Accessibility grants on the
   signature, and an ad-hoc one changes every build.
-- Relaunch: `osascript -e 'quit app id "local.lohzh.AnswerCircle"'; open dist/Shortcut.app`.
-  The bundle id stays `local.lohzh.AnswerCircle` so existing grants and
-  defaults survive.
+- Relaunch: `osascript -e 'quit app id "io.github.lucasisnotcool.shortcut"'; open dist/Shortcut.app`.
+  The bundle id is `io.github.lucasisnotcool.shortcut` (`AppIdentity`);
+  it was `local.lohzh.AnswerCircle` before 1.0, and `AppIdentity` migrates
+  that id's defaults and the old `AnswerCircle` support folder once at launch.
+- Docs for humans: `docs/FEATURES.md` (screenshots in `docs/images`, taken
+  with the mock course and quiz pages in `docs/demo`; never use real course
+  material in them).
 - Icon: `Resources/AppIcon.icns`, drawn by `scripts/make-icon.swift`;
   regenerate with `./scripts/make-icon.sh`.
 - Tests: `swift test`. `SHORTCUT_SNAPSHOT_DIR=<dir>` renders the overlay and
   main window to PNGs; `SHORTCUT_CONTEXT_DIR=<folder>` prints a readiness
   report for a real reference folder.
-- Logs: `log stream --predicate 'subsystem == "local.lohzh.Shortcut"'` — every
+- Logs: `log stream --predicate 'subsystem == "io.github.lucasisnotcool.shortcut"'` — every
   Claude run logs turns, cache reads/writes, cost and model.
 - Hands-free QC: `open --env SHORTCUT_QC=1 dist/Shortcut.app`, then post the
-  distributed notifications `local.lohzh.Shortcut.qc.{chat,capture,close,verify}`
+  distributed notifications `io.github.lucasisnotcool.shortcut.qc.{chat,capture,close,verify}`
   (README has the one-liner). Never enabled in a normal launch.
 
 ## Invariants
@@ -81,8 +94,8 @@ how to build and grant permissions, and how to test it with them.
 
 ## State on disk
 
-- `~/Library/Application Support/AnswerCircle/system-prompt.md` — the
+- `~/Library/Application Support/Shortcut/system-prompt.md` — the
   generated documents + instructions.
-- `~/Library/Application Support/AnswerCircle/Conversation/` — the saved chat.
-- `defaults read local.lohzh.AnswerCircle` — session id, reference folders
-  (`Shortcut.ContextRoots`), overlay position.
+- `~/Library/Application Support/Shortcut/Conversation/` — the saved chat.
+- `defaults read io.github.lucasisnotcool.shortcut` — session id, reference folders
+  (`Shortcut.ContextRoots`), overlay position, welcome/update/migration flags.

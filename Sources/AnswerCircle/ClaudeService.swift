@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import os
 
-let appLog = Logger(subsystem: "local.lohzh.Shortcut", category: "app")
+let appLog = Logger(subsystem: AppIdentity.bundleID, category: "app")
 
 actor ClaudeService {
     private static let sessionIDKey = "AnswerCircle.ClaudeSessionID"
@@ -54,7 +54,7 @@ actor ClaudeService {
     }
 
     /// "Max plan · you@example.com", from `claude auth status`.
-    static func accountSummary() async -> String? {
+    static func account() async -> ClaudeAccount? {
         guard let executable = locateExecutable() else { return nil }
         let process = Process()
         process.executableURL = executable
@@ -71,9 +71,14 @@ actor ClaudeService {
         let method = status["authMethod"] as? String ?? "?"
         let plan = (status["subscriptionType"] as? String).map { $0.prefix(1).uppercased() + $0.dropFirst() + " plan" }
         appLog.notice("Claude CLI auth: method \(method, privacy: .public), plan \(plan ?? "none", privacy: .public)")
-        guard status["loggedIn"] as? Bool == true else { return "Not signed in — run claude auth login" }
-        if method != "claude.ai" { return "Signed in with \(method) (not a Claude subscription)" }
-        return [plan, status["email"] as? String].compactMap { $0 }.joined(separator: " · ")
+        guard status["loggedIn"] as? Bool == true else {
+            return ClaudeAccount(summary: "Not signed in", usesSubscription: false)
+        }
+        if method != "claude.ai" {
+            return ClaudeAccount(summary: "Signed in with \(method) (not a Claude subscription)", usesSubscription: false)
+        }
+        return ClaudeAccount(summary: [plan, status["email"] as? String].compactMap { $0 }.joined(separator: " · "),
+                             usesSubscription: true)
     }
 
     static func locateExecutable() -> URL? {
@@ -186,8 +191,7 @@ actor ClaudeService {
     /// Documents first, instructions after (Anthropic long-context guidance).
     /// Rewritten only when it changes, and kept byte-stable for prompt caching.
     static func systemPromptURL() throws -> URL {
-        try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("AnswerCircle/system-prompt.md")
+        try AppIdentity.supportDirectory().appendingPathComponent("system-prompt.md")
     }
 
     private func writeSystemPrompt(_ context: ContextSnapshot) throws -> URL {
@@ -308,18 +312,18 @@ actor ClaudeService {
     }
 
     private func managedWorkspace() throws -> URL {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let workspace = base.appendingPathComponent("AnswerCircle/ClaudeWorkspace", isDirectory: true)
+        let workspace = try AppIdentity.supportDirectory().appendingPathComponent("ClaudeWorkspace", isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         return workspace
     }
 
 
+}
+
+struct ClaudeAccount: Equatable {
+    let summary: String
+    /// Signed in with a claude.ai account, the only billing Shortcut supports.
+    let usesSubscription: Bool
 }
 
 /// An image ready to send inline, within the API's 5 MB per-image limit.

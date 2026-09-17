@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    # The overlay uses Liquid Glass, which needs the macOS 26 SDK.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build universal app (ad-hoc signed)
+        run: ./scripts/build-app.sh --universal
+      - name: Package DMG
+        run: ./scripts/make-dmg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shortcut-unsigned-dmg
+          path: dist/Shortcut-*.dmg
+          retention-days: 7
