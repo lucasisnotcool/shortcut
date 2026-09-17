@@ -21,11 +21,19 @@ permissions and has to grant them again. So:
 - **Back it up now**, and keep the backup somewhere private (never in the repo):
 
   ```sh
-  security unlock-keychain -p "$(cat ~/Library/Application\ Support/ShortcutSigning/keychain-password)" \
-      ~/Library/Keychains/shortcut-signing.keychain-db
+  pw=~/Library/Application\ Support/ShortcutSigning/keychain-password
+  security unlock-keychain -p "$(cat "$pw")" ~/Library/Keychains/shortcut-signing.keychain-db
+  pbcopy < "$pw"    # the keychain password, for the dialog below
   security export -k ~/Library/Keychains/shortcut-signing.keychain-db \
-      -t identities -f pkcs12 -P '<a strong passphrase>' -o ~/Desktop/shortcut-signing.p12
+      -t identities -f pkcs12 -o ~/Desktop/shortcut-signing.p12
+  pbcopy < /dev/null
   ```
+
+  macOS shows two dialogs:
+  - **A passphrase for the backup file.** Choose a strong one and save it with the backup (e.g. in a password manager).
+  - **The keychain password.** This is not your Mac or Apple ID password: `setup-signing.sh` generated it at random and saved it in `~/Library/Application Support/ShortcutSigning/keychain-password`. Paste it with ⌘V (the commands above copied it) and click **Allow**.
+
+  Then move `shortcut-signing.p12` off the Desktop to private storage.
 
   On a new Mac, restore it with
   `scripts/setup-signing.sh --import shortcut-signing.p12` (plain
