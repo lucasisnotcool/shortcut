@@ -31,14 +31,26 @@ struct ReferenceReader {
 
     /// Folders the model may read, symlinks resolved.
     let allowedDirectories: [String]
+    /// Single files the model may read (roots added as files), symlinks resolved.
+    let allowedFiles: Set<String>
 
-    init(directories: [String]) {
-        allowedDirectories = directories.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path }
+    init(directories: [String], files: [String] = []) {
+        allowedDirectories = directories.map(Self.resolved)
+        allowedFiles = Set(files.map(Self.resolved))
+    }
+
+    init(context: ContextSnapshot) {
+        self.init(directories: context.readableDirectories, files: context.readableFiles)
+    }
+
+    private static func resolved(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     func isAllowed(_ url: URL) -> Bool {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
-        return allowedDirectories.contains { path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+        return allowedFiles.contains(path)
+            || allowedDirectories.contains { path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
     }
 
     func run(_ arguments: [String: Any]) async -> Output {

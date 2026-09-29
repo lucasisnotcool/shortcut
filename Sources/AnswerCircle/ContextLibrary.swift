@@ -49,12 +49,18 @@ struct ContextSnapshot: Equatable {
         }
     }
 
+    /// Folder roots, which the model may read anything inside. Every
+    /// on-demand file comes from a root, so this and `readableFiles` cover them.
     var readableDirectories: [String] {
-        Array(Set(roots.map { root in
-            (try? root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                ? root.path : root.deletingLastPathComponent().path
-        } + onDemandFiles.map { $0.deletingLastPathComponent().path })).sorted()
+        Array(Set(roots.filter(ContextLibrary.isFolderRoot).map(\.path))).sorted()
     }
+
+    /// Files added on their own: only the file is readable, not its folder.
+    var readableFiles: [String] {
+        Array(Set(roots.filter { !ContextLibrary.isFolderRoot($0) }.map(\.standardizedFileURL.path))).sorted()
+    }
+
+    var hasReadableFiles: Bool { !readableDirectories.isEmpty || !readableFiles.isEmpty }
 }
 
 enum ContextLibrary {
@@ -123,12 +129,17 @@ enum ContextLibrary {
 
     // MARK: Enumeration
 
+    /// A folder whose files are listed one by one; packages such as .rtfd count as files.
+    static func isFolderRoot(_ root: URL) -> Bool {
+        let values = try? root.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return values?.isDirectory == true && values?.isPackage != true
+    }
+
     static func enumerate(roots: [URL]) -> [URL] {
         var seen = Set<String>()
         var result: [URL] = []
         for root in roots {
-            let values = try? root.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-            if values?.isDirectory == true, values?.isPackage != true {
+            if isFolderRoot(root) {
                 guard let enumerator = FileManager.default.enumerator(
                     at: root,
                     includingPropertiesForKeys: [.isRegularFileKey],

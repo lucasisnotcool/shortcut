@@ -415,9 +415,13 @@ private func smallImage() -> NSImage {
     model.contextTokens = 16_000
     let client = OllamaClient(connection: APIConnection(entry: model, key: nil, transport: transport))
     let image = try ClaudeImage(image: smallImage())
-    let reply = try await client.complete(LLMRequest(system: "S", turns: [LLMTurn(role: .user, text: "Q", images: [image])],
+    let reply = try await client.complete(LLMRequest(system: "S\n" + ModelRouter.SessionNote.readOn,
+                                                     turns: [LLMTurn(role: .user, text: "Q", images: [image])],
                                                      reader: ReferenceReader(directories: ["/tmp"]), maxOutputTokens: 500))
     #expect(reply.text == "Plain answer")
+    // The retry's session note no longer offers the tool it dropped.
+    let retried = try #require((transport.bodies[1]["messages"] as? [[String: Any]])?.first?["content"] as? String)
+    #expect(retried == "S\n" + ModelRouter.SessionNote.readOff)
     #expect(transport.requests[0].url?.absoluteString == "http://localhost:11434/api/chat")
     #expect(transport.bodies[0]["tools"] != nil)
     #expect(transport.bodies[1]["tools"] == nil)
@@ -519,6 +523,95 @@ private func smallImage() -> NSImage {
     #expect(ReferenceReader.pageRange("2-5") == 2...5)
     #expect(ReferenceReader.pageRange(3) == 3...3)
     #expect(ReferenceReader.pageRange("0") == nil)
+}
+
+@Test func fileRootsGrantOnlyThemselvesNotTheirFolder() async throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("roots-\(UUID().uuidString)")
+    let course = base.appendingPathComponent("course")
+    let downloads = base.appendingPathComponent("Downloads")
+    try FileManager.default.createDirectory(at: course, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+    let lecture = downloads.appendingPathComponent("Week 1 (notes) [v2], final.txt")
+    try "lecture".write(to: lecture, atomically: true, encoding: .utf8)
+    try "private".write(to: downloads.appendingPathComponent("tax.txt"), atomically: true, encoding: .utf8)
+    try "inside".write(to: course.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+
+    var context = ContextSnapshot()
+    context.roots = [course, lecture]
+    context.onDemandFiles = [lecture]
+    #expect(context.readableDirectories == [course.path])
+    #expect(context.readableFiles == [lecture.standardizedFileURL.path])
+
+    let reader = ReferenceReader(context: context)
+    #expect(await reader.run(["file_path": lecture.path]).text == "lecture")
+    #expect(await reader.run(["file_path": course.appendingPathComponent("a.txt").path]).text == "inside")
+    let sibling = await reader.run(["file_path": downloads.appendingPathComponent("tax.txt").path])
+    #expect(sibling.isError && !sibling.text.contains("private"))
+}
+
+@Test func cliNeverPreApprovesEveryRead() throws {
+    let arguments = ClaudeService.arguments(
+        model: "", systemPromptURL: URL(fileURLWithPath: "/tmp/p.md"), session: ("id", false),
+        directories: ["/Users/t/course"], files: ["/Users/t/Downloads/Week 1 (notes) [v2], final.txt"])
+    let allowed = try #require(arguments.firstIndex(of: "--allowedTools"))
+    let rules = arguments[(allowed + 1)...].prefix { !$0.hasPrefix("--") }
+    #expect(Array(rules) == ["WebSearch,WebFetch", "Read(//Users/t/Downloads/Week 1 ?notes? ?v2?? final.txt)"])
+    #expect(!arguments.contains("Read"))
+    let sources = try #require(arguments.firstIndex(of: "--setting-sources"))
+    #expect(arguments[sources + 1] == "")
+    #expect(arguments.suffix(2) == ["--add-dir", "/Users/t/course"])
+    #expect(arguments.contains("--safe-mode") && arguments.contains("--strict-mcp-config"))
+    #expect(ClaudeService.readRules(forFile: "/a/Lecture é 中文*.pdf") == ["Read(//a/Lecture é 中文?.pdf)"])
+}
+
+/// `SHORTCUT_LIVE_SANDBOX=1 swift test --filter liveClaudeCodeSandbox` runs
+/// the real CLI with Shortcut's arguments (billed to the plan) and checks
+/// Read reaches the reference folder and file root but not their neighbours.
+@Test func liveClaudeCodeSandbox() async throws {
+    guard ProcessInfo.processInfo.environment["SHORTCUT_LIVE_SANDBOX"] != nil,
+          let claude = ClaudeService.locateExecutable() else { return }
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("sandbox-\(UUID().uuidString)")
+    let course = base.appendingPathComponent("course"), downloads = base.appendingPathComponent("Downloads")
+    let workspace = base.appendingPathComponent("workspace")
+    for folder in [course, downloads, workspace] {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+    defer { try? FileManager.default.removeItem(at: base) }
+    let canary = "CANARY-\(UUID().uuidString.prefix(8))"
+    let files = [course.appendingPathComponent("a.txt"): "alpha",
+                 downloads.appendingPathComponent("Week 1 (notes) [v2].txt"): "bravo",
+                 downloads.appendingPathComponent("tax.txt"): canary,
+                 base.appendingPathComponent("secret.txt"): canary]
+    for (url, text) in files { try text.write(to: url, atomically: true, encoding: .utf8) }
+    let prompt = base.appendingPathComponent("prompt.md")
+    try "Use the Read tool exactly as asked. If a Read call is refused, write DENIED for it.".write(to: prompt, atomically: true, encoding: .utf8)
+
+    var arguments = ClaudeService.arguments(
+        model: "haiku", systemPromptURL: prompt, session: (UUID().uuidString, false),
+        directories: [course.path], files: [downloads.appendingPathComponent("Week 1 (notes) [v2].txt").path])
+    arguments.removeAll { $0 == "--input-format" || $0 == "stream-json" || $0 == "--output-format" || $0 == "--verbose" }
+    arguments += ["--no-session-persistence", "--", """
+        Read each file and reply on one line as A=<contents or DENIED>; B=...; C=...; D=...
+        A: \(course.appendingPathComponent("a.txt").path)
+        B: \(downloads.appendingPathComponent("Week 1 (notes) [v2].txt").path)
+        C: \(downloads.appendingPathComponent("tax.txt").path)
+        D: \(base.appendingPathComponent("secret.txt").path)
+        """]
+    let process = Process()
+    process.executableURL = claude
+    process.arguments = arguments
+    process.currentDirectoryURL = workspace
+    process.environment = ClaudeService.childEnvironment()
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardInput = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    let reply = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    print("live sandbox reply: \(reply)")
+    #expect(reply.contains("alpha") && reply.contains("bravo"))
+    #expect(!reply.contains(canary))
 }
 
 // MARK: - Live

@@ -86,6 +86,11 @@ how to build and grant permissions, and how to test it with them.
    and adds a turn. Images go inline (`--input-format stream-json` for the
    CLI). API models get the same system prompt plus a `<session_setup>` note
    after the instructions, so the documents prefix stays cacheable.
+   Read is sandboxed to the reference folders plus file roots (not their
+   folders): never pre-approve bare `Read` for the CLI (it reaches every
+   file on the Mac) and keep `--setting-sources ""`; `ClaudeService.arguments`
+   builds the flags, and `SHORTCUT_LIVE_SANDBOX=1 swift test --filter
+   liveClaudeCodeSandbox` checks them against the real CLI.
 4. Source priority in the prompt: documents → on-demand files → own knowledge
    → web search. Window checks reply with `question_type` first (single,
    multiple, true_false, dropdown, ranking, matching, numeric, fill_blank,
