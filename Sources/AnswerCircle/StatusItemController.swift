@@ -67,7 +67,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         menu.addItem(item("Open Chat", hint: "⌥L ⌥L", action: #selector(openChat)))
         menu.addItem(item("Check Active Window", hint: "⌥ + ⌥", action: #selector(checkWindow)))
-        if model.badgeState != .idle && model.badgeState != .loading {
+        if ![.idle, .loading, .reset].contains(model.badgeState) {
             menu.addItem(item("Clear Badge", action: #selector(clearBadge)))
         }
         menu.addItem(.separator())
@@ -143,31 +143,66 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             statusItem.button?.image = Self.badgeImage(text: "!")
             statusItem.button?.toolTip = "No answer: \(model.lastWindowAnswer?.explanation ?? "")"
         case .error:
-            statusItem.button?.image = Self.badgeImage(text: "×")
+            statusItem.button?.image = Self.badgeImage(text: "!", shape: .triangle)
             statusItem.button?.toolTip = model.transientError ?? "Shortcut encountered an error"
+        case .reset:
+            statusItem.button?.image = Self.badgeImage(text: "↺")
+            statusItem.button?.toolTip = "Conversation reset"
         }
     }
 
+    enum BadgeShape { case ring, triangle }
+
     /// Monochrome template images: an outlined ring, optionally with a
     /// character inside; several answers ("1 3 4") get an outlined capsule
-    /// that widens to fit. The menu bar tints them for light and dark mode.
-    static func badgeImage(text: String?) -> NSImage {
+    /// that widens to fit, and errors an outlined triangle. ✓ and ✗ are
+    /// drawn as strokes. The menu bar tints them for light and dark mode.
+    static func badgeImage(text: String?, shape: BadgeShape = .ring) -> NSImage {
         let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-        let value = text.map { NSAttributedString(string: $0, attributes: [.font: font, .foregroundColor: NSColor.black]) }
+        let isStroked = text == "✓" || text == "✗"
+        let value = text.flatMap { isStroked ? nil : NSAttributedString(string: $0, attributes: [.font: font, .foregroundColor: NSColor.black]) }
         let textWidth = ceil(value?.size().width ?? 0)
-        let isCapsule = (text?.count ?? 0) > 1
+        let isCapsule = shape == .ring && (text?.count ?? 0) > 1
         let size = NSSize(width: isCapsule ? max(18, textWidth + 12) : 18, height: 18)
         let image = NSImage(size: size, flipped: false) { rect in
             NSColor.black.setStroke()
             let outline = rect.insetBy(dx: 1.25, dy: 1.25)
-            let shape = isCapsule
-                ? NSBezierPath(roundedRect: outline, xRadius: outline.height / 2, yRadius: outline.height / 2)
-                : NSBezierPath(ovalIn: outline)
-            shape.lineWidth = 1.4
-            shape.stroke()
-            if let value {
+            let path: NSBezierPath
+            switch shape {
+            case .triangle:
+                path = NSBezierPath()
+                path.move(to: NSPoint(x: outline.midX, y: outline.maxY))
+                path.line(to: NSPoint(x: outline.maxX, y: outline.minY + 0.5))
+                path.line(to: NSPoint(x: outline.minX, y: outline.minY + 0.5))
+                path.close()
+                path.lineJoinStyle = .round
+            case .ring:
+                path = isCapsule
+                    ? NSBezierPath(roundedRect: outline, xRadius: outline.height / 2, yRadius: outline.height / 2)
+                    : NSBezierPath(ovalIn: outline)
+            }
+            path.lineWidth = 1.4
+            path.stroke()
+            if isStroked {
+                let mark = NSBezierPath()
+                let (x, y) = (rect.midX, rect.midY)
+                if text == "✓" {
+                    mark.move(to: NSPoint(x: x - 3.6, y: y + 0.2))
+                    mark.line(to: NSPoint(x: x - 1.0, y: y - 2.6))
+                    mark.line(to: NSPoint(x: x + 3.8, y: y + 3.0))
+                } else {
+                    mark.move(to: NSPoint(x: x - 3, y: y - 3)); mark.line(to: NSPoint(x: x + 3, y: y + 3))
+                    mark.move(to: NSPoint(x: x - 3, y: y + 3)); mark.line(to: NSPoint(x: x + 3, y: y - 3))
+                }
+                mark.lineWidth = 1.7
+                mark.lineCapStyle = .round
+                mark.lineJoinStyle = .round
+                mark.stroke()
+            } else if let value {
                 let textSize = value.size()
-                value.draw(at: NSPoint(x: rect.midX - textSize.width / 2, y: rect.midY - textSize.height / 2))
+                // The triangle's centre of mass sits low, so its "!" does too.
+                let dy: CGFloat = shape == .triangle ? -1.5 : 0
+                value.draw(at: NSPoint(x: rect.midX - textSize.width / 2, y: rect.midY - textSize.height / 2 + dy))
             }
             return true
         }

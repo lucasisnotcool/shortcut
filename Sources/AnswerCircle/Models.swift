@@ -35,6 +35,8 @@ enum AnswerBadgeState: Equatable {
     case answer(String)
     case noAnswer
     case error
+    /// Shown briefly after the conversation is reset, then back to idle.
+    case reset
 }
 
 @MainActor
@@ -366,7 +368,9 @@ final class AppModel: ObservableObject {
             draft = ""
             lastWindowAnswer = nil
             transientError = nil
-            badgeState = .idle
+            badgeState = .reset
+            try? await Task.sleep(for: .seconds(2))
+            if badgeState == .reset { badgeState = .idle }
         }
     }
 

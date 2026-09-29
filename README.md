@@ -24,9 +24,12 @@ https://github.com/user-attachments/assets/f2bd6850-dc85-43fd-a17b-516d93c196d7
   | Ranking | the options first to last | `3 2 5 4 1` |
   | Matching | the choice for each item, in item order | `B D A C` |
   | Number | the value | `42` |
-  | Free-text blanks | `✎`; the text is in the chat and the badge menu | |
+  | Free-text blanks | what's typed, checked: `✓` all filled in and right, `✗` any entry wrong, `✎` otherwise; the answer text is in the chat and the badge menu | `✓` |
+  | Open-ended (written response) | the same check of the typed response; the model answer and feedback are in the chat and the badge menu | `✗` |
   | No confident answer | `!` with the reason | |
-  | Error | `×` | |
+  | Error | `!` in a triangle | |
+
+  Typed entries are judged as a marker would: case, spacing and equivalent forms don't matter; a misspelling, a wrong value or a missing key point does. Other question types show the answer itself, so compare it with the screen yourself. After a reset (double-tap right Option or Reset Conversation) the circle shows `↺` for two seconds.
 
   With several questions on screen, Claude answers only the first one whose question and options are fully visible, reading top to bottom. It skips cut-off questions and anything already finished above it (leftover options, ticks, "Correct!" feedback), ignores later questions, and gives no answer if no question is complete. The chat and badge menu name the question it answered (for example "Q4 What is the boiling point…").
 

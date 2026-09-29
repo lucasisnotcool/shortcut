@@ -468,6 +468,8 @@ enum ClaudeOutputParser {
             return try numeric(object, explanation)
         case .fillBlank?:
             return try fillBlank(object, explanation)
+        case .openEnded?:
+            return try openEnded(object, explanation)
         case let choice?:
             if object["options"] != nil { return try choiceAnswer(object, kind: choice, explanation) }
             return try legacy(object, kind: choice, explanation)
@@ -588,23 +590,62 @@ enum ClaudeOutputParser {
         return WindowAnswer(tag: AnswerTag(kind: .numeric, values: [value]), explanation: explanation, details: details)
     }
 
-    /// {"blanks": [{"blank": "1", "answer": "...", "reason": "..."}]}
+    /// {"blanks": [{"blank": "1", "answer": "...", "entered": "...", "entry_status": "...", "reason": "..."}]}
     private static func fillBlank(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
         guard let entries = object["blanks"] as? [[String: Any]], !entries.isEmpty else {
             throw invalid("The model gave a fill-in-the-blank answer without blanks.")
         }
         var values: [String] = []
         var details: [String] = []
+        var statuses: [EntryVerdict?] = []
         for (index, entry) in entries.enumerated() {
             guard let text = string(entry["answer"])?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
                 throw invalid("The model left a blank empty.")
             }
             let name = string(entry["blank"]) ?? String(index + 1)
             let reason = string(entry["reason"]).map { " — \($0)" } ?? ""
+            let status = entryVerdict(entry["entry_status"])
+            let entered = string(entry["entered"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let typed: String
+            switch status {
+            case .correct?: typed = entered.isEmpty ? " (typed ✓)" : " (typed “\(entered)” ✓)"
+            case .incorrect?: typed = entered.isEmpty ? " (typed ✗)" : " (typed “\(entered)” ✗)"
+            case .incomplete?, nil: typed = ""
+            }
+            statuses.append(status)
             values.append(text)
-            details.append("**Blank \(name):** \(text)\(reason)")
+            details.append("**Blank \(name):** \(text)\(typed)\(reason)")
         }
-        return WindowAnswer(tag: AnswerTag(kind: .fillBlank, values: values), explanation: explanation, details: details)
+        // A blank without a verdict counts as not yet filled in.
+        let entry = statuses.allSatisfy { $0 == nil } ? nil : EntryVerdict.combined(statuses.map { $0 ?? .incomplete })
+        return WindowAnswer(tag: AnswerTag(kind: .fillBlank, values: values, entry: entry), explanation: explanation, details: details)
+    }
+
+    /// {"answer": "<model answer>", "entered": "...", "entry_status": "...", "feedback": "..."}
+    private static func openEnded(_ object: [String: Any], _ explanation: String) throws -> WindowAnswer {
+        guard let answer = string(object["answer"])?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else {
+            throw invalid("The model gave an open-ended answer without a model answer.")
+        }
+        let status = entryVerdict(object["entry_status"])
+        var details = ["**Model answer:** \(answer)"]
+        let feedback = string(object["feedback"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch status {
+        case .correct?: details.append("**What's typed:** ✓ \(feedback)")
+        case .incorrect?: details.append("**What's typed:** ✗ \(feedback)")
+        case .incomplete?, nil: break
+        }
+        return WindowAnswer(tag: AnswerTag(kind: .openEnded, values: [answer], entry: status),
+                            explanation: explanation, details: details)
+    }
+
+    /// "correct" / "incorrect" / "empty" for what is typed on screen; nil when missing or unknown.
+    private static func entryVerdict(_ value: Any?) -> EntryVerdict? {
+        switch string(value)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "correct": return .correct
+        case "incorrect", "wrong": return .incorrect
+        case "empty", "blank": return .incomplete
+        default: return nil
+        }
     }
 
     /// Older format: {"selected_option": "B"} or {"selected_options": [...]}.

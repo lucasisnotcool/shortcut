@@ -18,6 +18,8 @@ enum AnswerKind: String, Codable, CaseIterable {
     case numeric
     /// Free text for one or more blanks.
     case fillBlank = "fill_blank"
+    /// A written response (short answer, explain, discuss); the value is a model answer.
+    case openEnded = "open_ended"
     /// No answer given.
     case none
 }
@@ -39,6 +41,24 @@ enum AnswerLabels {
     }
 }
 
+/// How the text typed on screen compares with the answer, for kinds whose
+/// answer is too long for the badge (fill_blank, open_ended).
+enum EntryVerdict: String, Codable {
+    /// Every field is filled in and would be marked right.
+    case correct
+    /// At least one filled-in field would be marked wrong.
+    case incorrect
+    /// Nothing wrong yet, but a field is still empty.
+    case incomplete
+
+    /// Any wrong entry decides it; all right is correct; otherwise incomplete.
+    static func combined(_ verdicts: [EntryVerdict]) -> EntryVerdict? {
+        guard !verdicts.isEmpty else { return nil }
+        if verdicts.contains(.incorrect) { return .incorrect }
+        return verdicts.allSatisfy { $0 == .correct } ? .correct : .incomplete
+    }
+}
+
 /// What a chat message needs to show an answer: stored with the conversation.
 struct AnswerTag: Codable, Equatable {
     var kind: AnswerKind
@@ -47,6 +67,17 @@ struct AnswerTag: Codable, Equatable {
     var values: [String]
     /// Which question was answered ("Q4 What is the boiling point…"), when Claude says.
     var question: String? = nil
+    /// The check of what is typed on screen (fill_blank, open_ended), when Claude gave one.
+    var entry: EntryVerdict? = nil
+
+    /// ✓ / ✗ for a checked entry, ✎ while it is empty or unchecked.
+    private var entryGlyph: String {
+        switch entry {
+        case .correct?: return "✓"
+        case .incorrect?: return "✗"
+        case .incomplete?, nil: return "✎"
+        }
+    }
 
     var isNoAnswer: Bool { kind == .none || values.isEmpty }
 
@@ -54,7 +85,7 @@ struct AnswerTag: Codable, Equatable {
     var badgeText: String {
         if isNoAnswer { return "!" }
         switch kind {
-        case .fillBlank: return "✎"
+        case .fillBlank, .openEnded: return entryGlyph
         case .numeric:
             let value = values[0]
             return value.count > 10 ? String(value.prefix(9)) + "…" : value
@@ -69,7 +100,7 @@ struct AnswerTag: Codable, Equatable {
         switch kind {
         case .single, .multiple, .trueFalse, .dropdown: return values
         case .ranking, .matching, .numeric: return [badgeText]
-        case .fillBlank: return ["✎"]
+        case .fillBlank, .openEnded: return [entryGlyph]
         case .none: return ["!"]
         }
     }
@@ -86,6 +117,7 @@ struct AnswerTag: Codable, Equatable {
         case .numeric: return "Answer \(values[0])"
         case .fillBlank:
             return values.count == 1 ? "Fill in: \(values[0])" : "Fill in \(values.count) blanks"
+        case .openEnded: return "Written answer"
         case .none: return "No answer"
         }
     }
@@ -109,8 +141,18 @@ struct AnswerTag: Codable, Equatable {
         case .ranking: return "Ranking question · options listed first to last"
         case .matching: return "Matching question · choice for each item, in item order"
         case .numeric: return "Number answer"
-        case .fillBlank: return "Fill-in-the-blank · the text is below"
+        case .fillBlank: return "Fill-in-the-blank · the text is below" + entryDescription
+        case .openEnded: return "Open-ended question · a model answer is below" + entryDescription
         case .none: return ""
+        }
+    }
+
+    private var entryDescription: String {
+        switch entry {
+        case .correct?: return " · what's typed is correct"
+        case .incorrect?: return " · what's typed is wrong"
+        case .incomplete?: return " · not all filled in"
+        case nil: return ""
         }
     }
 
@@ -132,10 +174,11 @@ struct AnswerTag: Codable, Equatable {
         else { kind = .single }
     }
 
-    init(kind: AnswerKind, values: [String], question: String? = nil) {
+    init(kind: AnswerKind, values: [String], question: String? = nil, entry: EntryVerdict? = nil) {
         self.kind = kind
         self.values = values
         self.question = question
+        self.entry = entry
     }
 }
 

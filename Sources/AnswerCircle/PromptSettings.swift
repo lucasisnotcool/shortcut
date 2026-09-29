@@ -37,9 +37,13 @@ enum PromptSettings {
 
     "numeric": {"question": "...", "question_type": "numeric", "value": "<the number as it should be entered>", "unit": "<unit or empty>", "explanation": "..."}
 
-    "fill_blank" — free-text blanks, in order: {"question": "...", "question_type": "fill_blank", "blanks": [{"blank": "1", "answer": "<text to enter>", "reason": "..."}], "explanation": "..."}
+    "fill_blank" — free-text blanks, in order: {"question": "...", "question_type": "fill_blank", "blanks": [{"blank": "1", "answer": "<text to enter>", "entered": "<text typed in this blank now, or empty>", "entry_status": "correct" | "incorrect" | "empty", "reason": "..."}], "explanation": "..."}
+
+    "open_ended": {"question": "...", "question_type": "open_ended", "answer": "<a concise model answer that would get full marks>", "entered": "<the response typed on screen now, or empty>", "entry_status": "correct" | "incorrect" | "empty", "feedback": "<one sentence: what the typed response gets right or misses; empty if nothing is typed>", "explanation": "..."}
 
     "none": {"question": "", "question_type": "none", "explanation": "<why no answer>"}
+
+    For "fill_blank" and "open_ended" only, once you have worked out the answer on your own, read what is typed on screen and judge it as a marker would. For each blank (or the one response), "entry_status" is "empty" when nothing is typed, "correct" when it would get full marks, and "incorrect" otherwise. Ignore case, spacing and formatting, and accept equivalent forms (a symbol for its name, 0.5 for 1/2, a synonym the course uses). A misspelled word, a wrong value or a missing key point makes it incorrect. Copy the typed text into "entered".
 
     For ranking and matching, use labels 1-20 or A-T as shown; if the items or choices have no labels, number them 1, 2, 3... (or letter them A, B, C...) in on-screen order, top to bottom.
     """
@@ -59,7 +63,7 @@ enum PromptSettings {
     static let defaultWindowCheck = """
     [Active-window check] The attached image is a screenshot of the window I am teaching from. Identify the quiz question visible in it and work out the correct answer.
 
-    Which question: answer exactly one — the first question, in reading order (top to bottom, then left to right), whose stem and all of its options or answer fields are fully visible. Answer it even when other complete questions follow; ignore everything after it. Skip anything above it that is cut off or already finished: a previous question's options, ticks, "Correct"/"Incorrect" feedback, scores or explanations. Every option you list must belong to the chosen question; never mix in options from another question. If no question is fully visible, give no answer and say what is missing.
+    Which question: answer exactly one — the first question, in reading order (top to bottom, then left to right), whose stem and all of its options or answer fields are fully visible. Answer it even when other complete questions follow; ignore everything after it. Skip anything above it that is cut off or already finished: a previous question's options, ticks, "Correct"/"Incorrect" feedback, scores or explanations. A question whose fields are filled in but not yet submitted is still unfinished. Every option you list must belong to the chosen question; never mix in options from another question. If no question is fully visible, give no answer and say what is missing.
 
     Question type:
     - "true_false": a statement to judge as true or false (use T and F even if the screen shows True/False buttons without labels).
@@ -69,6 +73,7 @@ enum PromptSettings {
     - "matching": pair each item with its choice (for example: match, connect, pair terms with definitions). A choice may fit several items; distractor choices may fit none.
     - "numeric": the answer is a number to type in; give it in the form and precision the question asks for.
     - "fill_blank": free-text blanks with no options to choose from.
+    - "open_ended": a written response in a text box (short answer, explain, describe, discuss), with no options or fixed blanks.
 
     Judge each option or item on its own. Restate the question stem, including any negation (NOT, EXCEPT, LEAST, FALSE, incorrect), and decide whether the option satisfies it. For "Which of the following are NOT evidence of X", an option is an answer only if it is not evidence of X; if options 1, 3 and 4 are evidence, the answer is 2 alone.
 

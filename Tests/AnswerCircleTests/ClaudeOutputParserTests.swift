@@ -309,6 +309,47 @@ private func parse(_ json: String) throws -> WindowAnswer {
     #expect(throws: AppError.self) { try parse(#"{"question_type":"fill_blank","blanks":[{"blank":"1","answer":" "}],"explanation":"x"}"#) }
 }
 
+@Test func typedEntriesAreChecked() throws {
+    func blanks(_ first: String, _ second: String) throws -> WindowAnswer {
+        try parse(#"{"question_type":"fill_blank","blanks":[{"blank":"1","answer":"photosynthesis","entered":"Photosynthesis","entry_status":"\#(first)"},{"blank":"2","answer":"glucose","entered":"","entry_status":"\#(second)"}],"explanation":"x"}"#)
+    }
+    let right = try blanks("correct", "correct")
+    #expect(right.tag.entry == .correct)
+    #expect(right.tag.badgeText == "✓")
+    #expect(right.tag.headerTokens == ["✓"])
+    #expect(right.chatText.contains("**Blank 1:** photosynthesis (typed “Photosynthesis” ✓)"))
+    // One wrong entry decides it, even with a blank still empty.
+    let wrong = try blanks("incorrect", "empty")
+    #expect(wrong.tag.badgeText == "✗")
+    #expect(wrong.tag.subtitle.contains("what's typed is wrong"))
+    // Right so far but unfinished: back to the pencil.
+    #expect(try blanks("correct", "empty").tag.badgeText == "✎")
+    #expect(try blanks("empty", "empty").tag.badgeText == "✎")
+    // A blank without a verdict counts as unfinished.
+    let partial = try parse(#"{"question_type":"fill_blank","blanks":[{"answer":"a","entry_status":"correct"},{"answer":"b"}],"explanation":"x"}"#)
+    #expect(partial.tag.entry == .incomplete)
+
+    let open = try parse(#"{"question":"Q2 Explain osmosis","question_type":"open-ended","answer":"Water moves across a membrane toward the higher solute concentration.","entered":"water moves to salty side","entry_status":"incorrect","feedback":"Misses the membrane.","explanation":"x"}"#)
+    #expect(open.tag.kind == .openEnded)
+    #expect(open.tag.badgeText == "✗")
+    #expect(open.tag.title == "Written answer")
+    #expect(open.details == ["**Model answer:** Water moves across a membrane toward the higher solute concentration.",
+                             "**What's typed:** ✗ Misses the membrane."])
+    let unchecked = try parse(#"{"question_type":"open_ended","answer":"Because.","explanation":"x"}"#)
+    #expect(unchecked.tag.entry == nil)
+    #expect(unchecked.tag.badgeText == "✎")
+    #expect(throws: AppError.self) { try parse(#"{"question_type":"open_ended","answer":"","explanation":"x"}"#) }
+}
+
+@Test func entryVerdictSurvivesSavedChats() throws {
+    let tag = AnswerTag(kind: .fillBlank, values: ["a"], entry: .incorrect)
+    let decoded = try JSONDecoder().decode(AnswerTag.self, from: JSONEncoder().encode(tag))
+    #expect(decoded == tag)
+    let old = try JSONDecoder().decode(AnswerTag.self, from: Data(#"{"kind":"fill_blank","values":["a"]}"#.utf8))
+    #expect(old.entry == nil)
+    #expect(old.badgeText == "✎")
+}
+
 @Test func legacyStoredAnswersStillLoad() {
     #expect(AnswerTag(legacy: "1,3,4", isMultiple: true, isTrueFalse: false) == AnswerTag(kind: .multiple, values: ["1", "3", "4"]))
     #expect(AnswerTag(legacy: "F", isMultiple: false, isTrueFalse: true).kind == .trueFalse)

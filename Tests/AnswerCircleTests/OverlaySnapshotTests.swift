@@ -183,8 +183,8 @@ import Testing
 
 @Test @MainActor func renderMenuBarBadges() throws {
     guard let directory = ProcessInfo.processInfo.environment["SHORTCUT_SNAPSHOT_DIR"] else { return }
-    let texts: [String?] = [nil, "B", "12", "!", "×", "✎", "1 3 4", "3 2 5 4 1", "B D A C", "3.14159265", "123456789…"]
-    let images = texts.map(StatusItemController.badgeImage(text:))
+    let texts: [String?] = [nil, "B", "12", "!", "✎", "✓", "✗", "↺", "1 3 4", "3 2 5 4 1", "B D A C", "3.14159265", "123456789…"]
+    let images = texts.map { StatusItemController.badgeImage(text: $0) } + [StatusItemController.badgeImage(text: "!", shape: .triangle)]
     let width = images.reduce(CGFloat(10)) { $0 + $1.size.width + 10 }
     let canvas = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in
         NSColor.white.setFill(); rect.fill()

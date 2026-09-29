@@ -89,7 +89,7 @@ how to build and grant permissions, and how to test it with them.
 4. Source priority in the prompt: documents → on-demand files → own knowledge
    → web search. Window checks reply with `question_type` first (single,
    multiple, true_false, dropdown, ranking, matching, numeric, fill_blank,
-   none); the type decides the other fields and the valid labels (1–8 / A–H
+   open_ended, none); the type decides the other fields and the valid labels (1–8 / A–H
    for choices, 1–20 / A–T for dropdown, ranking and matching, T / F for
    true/false). The reply starts with "question" (which question was
    answered); the prompt picks the first fully visible, unfinished question
@@ -97,6 +97,9 @@ how to build and grant permissions, and how to test it with them.
    `AnswerKind` / `AnswerTag` in WindowAnswer.swift own the
    badge text, titles and chat header; messages store the tag. The parser
    still accepts the old `selected_option` format and old saved chats.
+   fill_blank and open_ended also judge what is typed on screen
+   (`entry_status` per blank → `EntryVerdict`): the badge shows ✓ / ✗, or ✎
+   while nothing wrong is typed yet; the other types show the answer itself.
 9. The CLI must bill the claude.ai subscription (usage credits cover
    overflow): `ClaudeService.childEnvironment()` strips API-key, base-URL and
    cloud-provider variables. BYOK keys live only in the Keychain (service

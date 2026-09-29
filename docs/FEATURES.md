@@ -43,8 +43,19 @@ The badge changes with the question type:
 | Ranking | <img src="images/badge-ranking.png" alt="2 4 1 5 3" height="30"> | The options in order, first to last |
 | Matching | <img src="images/badge-matching.png" alt="C B D A" height="30"> | The choice for item 1, 2, 3, 4 |
 | Number | <img src="images/badge-numeric.png" alt="3200" height="30"> | Type 3200 |
-| Free-text blanks | <img src="images/badge-fillblank.png" alt="pencil" height="30"> | The words are in the menu and the chat |
+| Free-text blanks or written answer, nothing wrong typed yet | <img src="images/badge-fillblank.png" alt="pencil" height="30"> | The answer is in the menu and the chat |
+| … what's typed is right | <img src="images/badge-correct.png" alt="tick" height="30"> | Every blank (or the response) is filled in and would be marked right |
+| … what's typed is wrong | <img src="images/badge-incorrect.png" alt="cross" height="30"> | At least one entry would be marked wrong; the menu shows which |
 | No answer | <img src="images/badge-noquestion.png" alt="!" height="30"> | No complete question on screen; the menu says why |
+| Error | <img src="images/badge-error.png" alt="warning triangle" height="30"> | The check failed; the menu says why |
+| Reset | <img src="images/badge-reset.png" alt="reset arrow" height="30"> | The conversation was just reset (shown for two seconds) |
+
+For free-text blanks and open-ended questions the answer is too long for the
+badge, so Shortcut checks what you have typed instead, the way a marker
+would: case, spacing and equivalent forms (0.5 for ½, a symbol for its
+name) don't matter, but a misspelling, a wrong value or a missing key point
+does. For every other type the badge shows the answer itself, so you can
+compare it with what is selected on screen.
 
 While Claude is working, the circle spins. A check takes a few seconds.
 
