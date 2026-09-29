@@ -167,8 +167,7 @@ actor ModelRouter {
         var request = LLMRequest(
             system: Self.systemPrompt(context: context, entry: entry),
             turns: Self.turns(history: history) + [LLMTurn(role: .user, text: text, images: images)],
-            reader: entry.tools && !context.readableDirectories.isEmpty
-                ? ReferenceReader(directories: context.readableDirectories) : nil,
+            reader: entry.tools && context.hasReadableFiles ? ReferenceReader(context: context) : nil,
             webSearch: entry.webSearch && entry.provider.supportsWebSearch,
             maxOutputTokens: entry.maxOutputTokens,
             temperature: entry.temperature
@@ -209,16 +208,21 @@ actor ModelRouter {
         let base = context.documentsBlock.isEmpty
             ? PromptSettings.instructions
             : context.documentsBlock + "\n" + PromptSettings.instructions
-        let canRead = entry.tools && !context.readableDirectories.isEmpty
+        let canRead = entry.tools && context.hasReadableFiles
         let canSearch = entry.webSearch && entry.provider.supportsWebSearch
         var lines = ["You are running as \(entry.model) through \(entry.provider.title), not through Claude Code. Earlier turns in this conversation may have been answered by other models."]
-        lines.append(canRead
-            ? "The Read tool takes file_path and optional pages (for example \"2-5\") and is limited to the reference folders."
-            : "No Read tool is available: you cannot open on-demand files. If a question needs one, say so.")
-        lines.append(canSearch
-            ? "Web search is available for current or external information."
-            : "WebSearch and WebFetch are not available: do not claim to have searched the web.")
+        lines.append(canRead ? SessionNote.readOn : SessionNote.readOff)
+        lines.append(canSearch ? SessionNote.searchOn : SessionNote.searchOff)
         return base + "\n\n<session_setup>\n" + lines.joined(separator: "\n") + "\n</session_setup>\n"
+    }
+
+    /// The tool lines of `<session_setup>`. Clients swap them when a provider
+    /// rejects a tool and the request is retried without it.
+    enum SessionNote {
+        static let readOn = "The Read tool takes file_path and optional pages (for example \"2-5\") and is limited to the reference folders and files."
+        static let readOff = "No Read tool is available: you cannot open on-demand files. If a question needs one, say so."
+        static let searchOn = "Web search is available for current or external information. There is no WebFetch tool: work from the search results."
+        static let searchOff = "WebSearch and WebFetch are not available: do not claim to have searched the web."
     }
 
     /// The saved chat as text turns. Only the current message carries images.

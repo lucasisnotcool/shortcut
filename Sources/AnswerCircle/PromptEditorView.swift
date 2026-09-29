@@ -112,7 +112,7 @@ struct PromptEditorView: View {
                 part("3", "Message — what you typed, or the Window Check prompt (editable) with the screenshot attached",
                      "Pasted images and screenshots are attached inline. The context check (Verify) sends its own fixed message.")
                 part("4", "Tools",
-                     "Claude Code: Read, WebSearch and WebFetch only; read access limited to the reference folders; customizations, hooks and MCP servers are disabled. API models: a read-only Read tool limited to the same folders, and the provider's web search where it is switched on. A short note on which tools are available follows the instructions.")
+                     "Claude Code: Read, WebSearch and WebFetch only; read access limited to the reference folders and files; customizations, hooks, MCP servers and your Claude Code settings are ignored. API models: a read-only Read tool limited to the same folders and files, and the provider's web search where it is switched on. A short note on which tools are available follows the instructions.")
             }
             Text("The exact system prompt of the most recent request is saved on this Mac.")
                 .font(.caption).foregroundStyle(.secondary)

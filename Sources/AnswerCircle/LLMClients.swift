@@ -19,6 +19,22 @@ struct LLMRequest {
     var webSearch = false
     var maxOutputTokens = 8_192
     var temperature: Double?
+
+    /// For a retry after the provider rejected the Read tool.
+    func withoutReader() -> LLMRequest {
+        var request = self
+        request.reader = nil
+        request.system = system.replacingOccurrences(of: ModelRouter.SessionNote.readOn, with: ModelRouter.SessionNote.readOff)
+        return request
+    }
+
+    /// For a retry after the provider rejected web search.
+    func withoutSearch() -> LLMRequest {
+        var request = self
+        request.webSearch = false
+        request.system = system.replacingOccurrences(of: ModelRouter.SessionNote.searchOn, with: ModelRouter.SessionNote.searchOff)
+        return request
+    }
 }
 
 struct LLMReply {
@@ -360,9 +376,7 @@ struct OpenAIClient: LLMClient {
             return try await run(request)
         } catch where request.reader != nil && APIConnection.rejectedTools(error) {
             appLog.notice("\(connection.entry.label, privacy: .public) rejected tools; retrying without them")
-            var plain = request
-            plain.reader = nil
-            return try await run(plain)
+            return try await run(request.withoutReader())
         }
     }
 
@@ -467,15 +481,15 @@ struct GeminiClient: LLMClient {
 
     func complete(_ request: LLMRequest) async throws -> LLMReply {
         do {
-            return try await run(request, search: request.webSearch)
+            return try await run(request)
         } catch where request.webSearch && request.reader != nil && APIConnection.rejectedTools(error) {
             // Some Gemini models can't combine Google Search with function calls.
             appLog.notice("\(connection.entry.label, privacy: .public) rejected search with tools; retrying without search")
-            return try await run(request, search: false)
+            return try await run(request.withoutSearch())
         }
     }
 
-    private func run(_ request: LLMRequest, search: Bool) async throws -> LLMReply {
+    private func run(_ request: LLMRequest) async throws -> LLMReply {
         let key = try connection.requireKey()
         let headers = ["x-goog-api-key": key]
         var contents: [[String: Any]] = request.turns.map { turn in
@@ -491,7 +505,7 @@ struct GeminiClient: LLMClient {
                 "parameters": ReferenceReader.parameterSchema
             ]]])
         }
-        if search { tools.append(["google_search": [String: Any]()]) }
+        if request.webSearch { tools.append(["google_search": [String: Any]()]) }
         var config: [String: Any] = ["maxOutputTokens": request.maxOutputTokens]
         if let temperature = request.temperature { config["temperature"] = temperature }
 
@@ -561,9 +575,7 @@ struct OllamaClient: LLMClient {
             return try await run(request)
         } catch where request.reader != nil && APIConnection.rejectedTools(error) {
             appLog.notice("\(connection.entry.label, privacy: .public) does not support tools; retrying without them")
-            var plain = request
-            plain.reader = nil
-            return try await run(plain)
+            return try await run(request.withoutReader())
         }
     }
 

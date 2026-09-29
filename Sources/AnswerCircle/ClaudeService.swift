@@ -12,7 +12,7 @@ actor ClaudeService: CLIModelRunner {
     static let defaultModel = "opus[1m]"
     /// Identical for chat and window checks: a different tool list would
     /// invalidate the prompt cache that holds the reference documents.
-    private static let tools = ["Read", "WebSearch", "WebFetch"]
+    static let tools = ["Read", "WebSearch", "WebFetch"]
     private var sessionID: String
     private var sessionHasStarted: Bool
     /// Every request resumes the same session, so requests must never overlap.
@@ -155,7 +155,8 @@ actor ClaudeService: CLIModelRunner {
         for attempt in 0..<2 {
             do {
                 let output = try await launchClaude(message: message, systemPromptURL: systemPromptURL,
-                                                   directories: context.readableDirectories, model: model)
+                                                   directories: context.readableDirectories,
+                                                   files: context.readableFiles, model: model)
                 markSessionStarted()
                 return output
             } catch AppError.processFailed(let detail) where attempt == 0 {
@@ -208,35 +209,64 @@ actor ClaudeService: CLIModelRunner {
         return data
     }
 
-    private func launchClaude(message: Data, systemPromptURL: URL, directories: [String], model: String) async throws -> Data {
-        guard let executable = Self.locateExecutable() else { throw AppError.claudeNotFound }
-
+    /// The sandbox. Read is not pre-approved as a whole (a bare `Read` rule
+    /// reaches every file on the Mac): it covers the working directories
+    /// (the reference folders, via --add-dir) plus one rule per file root.
+    /// User and project settings are skipped, since their allow rules and
+    /// extra directories would widen that.
+    static func arguments(model: String, systemPromptURL: URL, session: (id: String, resume: Bool),
+                          directories: [String], files: [String]) -> [String] {
         var arguments = [
             "-p",
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
-            "--model", model.isEmpty ? Self.defaultModel : model,
+            "--model", model.isEmpty ? defaultModel : model,
             "--permission-mode", "dontAsk",
-            "--tools", Self.tools.joined(separator: ","),
-            "--allowedTools", Self.tools.joined(separator: ","),
+            "--tools", tools.joined(separator: ","),
             "--strict-mcp-config",
             "--safe-mode",
+            "--setting-sources", "",
             "--system-prompt-file", systemPromptURL.path
         ]
-        if sessionHasStarted {
-            arguments += ["--resume", sessionID]
+        arguments += ["--allowedTools", "WebSearch,WebFetch"] + files.flatMap(readRules)
+        if session.resume {
+            arguments += ["--resume", session.id]
         } else {
-            arguments += ["--session-id", sessionID, "--name", "Shortcut"]
+            arguments += ["--session-id", session.id, "--name", "Shortcut"]
         }
         if !directories.isEmpty {
             arguments.append("--add-dir")
             arguments.append(contentsOf: directories)
         }
+        return arguments
+    }
+
+    /// Read rules for one file, by its path and its resolved path. Rules are
+    /// globs with no working escape for `[`, `]` or `*`, and commas split the
+    /// list, so ASCII punctuation becomes `?` (any one character but `/`).
+    static func readRules(forFile path: String) -> [String] {
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        return Array(Set([path, resolved])).sorted().map { path in
+            let pattern = String(path.map { character -> Character in
+                guard character.isASCII, !character.isLetter, !character.isNumber, !" ./_-".contains(character) else {
+                    return character
+                }
+                return "?"
+            })
+            return "Read(/\(pattern))"
+        }
+    }
+
+    private func launchClaude(message: Data, systemPromptURL: URL, directories: [String], files: [String],
+                              model: String) async throws -> Data {
+        guard let executable = Self.locateExecutable() else { throw AppError.claudeNotFound }
 
         let process = Process()
         process.executableURL = executable
-        process.arguments = arguments
+        process.arguments = Self.arguments(model: model, systemPromptURL: systemPromptURL,
+                                           session: (sessionID, sessionHasStarted),
+                                           directories: directories, files: files)
         process.currentDirectoryURL = try managedWorkspace()
 
         process.environment = Self.childEnvironment()
