@@ -48,7 +48,8 @@ assuming. Confirm at least:
    quiz questions while presenting, quick chat about the course, or both.
 2. **Features.** Which of these they want, and whether the defaults suit
    them:
-   - Quick chat overlay: double-tap Option.
+   - Quick chat overlay: double-tap left Option. Reset the conversation:
+     double-tap right Option.
    - Window check: press left and right Option together; the menu-bar badge
      shows the answer.
    - Reference folders: which course folders to load, and whether they
@@ -184,7 +185,7 @@ After a relaunch you should see
 3. **What only the user can check.** Your terminal usually has no Screen
    Recording permission, so `screencapture` fails and you can't see the
    screen. Ask the user to try these and tell you the result:
-   - double-tap Option, type a question, press Return, and check the reply is
+   - double-tap left Option, type a question, press Return, and check the reply is
      readable over both a light and a dark window;
    - press both Option keys over a real quiz and compare the badge with the
      correct answer;

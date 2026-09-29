@@ -39,6 +39,22 @@ import Testing
     #expect(recognizer.handleModifierTransition(key: 58, optionModifierPresent: false, timestamp: 1.25) == .showChat)
 }
 
+@Test func rightOptionDoubleTapResetsChat() {
+    var recognizer = OptionGestureRecognizer()
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: true, timestamp: 1.00) == .none)
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: false, timestamp: 1.05) == .none)
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: true, timestamp: 1.20) == .none)
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: false, timestamp: 1.25) == .resetChat)
+}
+
+@Test func alternatingOptionTapsDoNothing() {
+    var recognizer = OptionGestureRecognizer()
+    #expect(recognizer.handleModifierTransition(key: 58, optionModifierPresent: true, timestamp: 1.00) == .none)
+    #expect(recognizer.handleModifierTransition(key: 58, optionModifierPresent: false, timestamp: 1.05) == .none)
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: true, timestamp: 1.20) == .none)
+    #expect(recognizer.handleModifierTransition(key: 61, optionModifierPresent: false, timestamp: 1.25) == .none)
+}
+
 @Test func bothOptionsCaptureWindowOnce() {
     var recognizer = OptionGestureRecognizer()
     #expect(recognizer.handleModifierTransition(key: 58, optionModifierPresent: true, timestamp: 2.00) == .none)

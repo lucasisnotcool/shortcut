@@ -3,6 +3,7 @@ import AppKit
 enum OptionGestureAction: Equatable {
     case none
     case showChat
+    case resetChat
     case captureWindow
 }
 
@@ -46,7 +47,8 @@ struct OptionGestureRecognizer {
         validBarePress[key] = false
         if let previous = lastRelease[key], timestamp - previous <= doublePressInterval {
             lastRelease.removeAll()
-            return .showChat
+            // Left Option opens the chat; right Option clears it.
+            return key == 61 ? .resetChat : .showChat
         }
         lastRelease[key] = timestamp
         if let otherKey = optionKeys.first(where: { $0 != key }) {
@@ -118,7 +120,8 @@ struct OptionKeyFilter {
 
 @MainActor
 final class GlobalShortcutMonitor {
-    private let onDoubleOption: () -> Void
+    private let onDoubleLeftOption: () -> Void
+    private let onDoubleRightOption: () -> Void
     private let onBothOptions: () -> Void
     private var recognizer = OptionGestureRecognizer()
     private var filter = OptionKeyFilter()
@@ -139,8 +142,11 @@ final class GlobalShortcutMonitor {
     private static let leftOptionMask: UInt64 = 0x20   // NX_DEVICELALTKEYMASK
     private static let rightOptionMask: UInt64 = 0x40  // NX_DEVICERALTKEYMASK
 
-    init(onDoubleOption: @escaping () -> Void, onBothOptions: @escaping () -> Void) {
-        self.onDoubleOption = onDoubleOption
+    init(onDoubleLeftOption: @escaping () -> Void,
+         onDoubleRightOption: @escaping () -> Void,
+         onBothOptions: @escaping () -> Void) {
+        self.onDoubleLeftOption = onDoubleLeftOption
+        self.onDoubleRightOption = onDoubleRightOption
         self.onBothOptions = onBothOptions
     }
 
@@ -304,7 +310,9 @@ final class GlobalShortcutMonitor {
         case .none:
             break
         case .showChat:
-            DispatchQueue.main.async { self.onDoubleOption() }
+            DispatchQueue.main.async { self.onDoubleLeftOption() }
+        case .resetChat:
+            DispatchQueue.main.async { self.onDoubleRightOption() }
         case .captureWindow:
             DispatchQueue.main.async { self.onBothOptions() }
         }

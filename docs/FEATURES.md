@@ -14,7 +14,7 @@ There are three ways to use it:
 
 1. [**Menu bar**](#1-the-menu-bar): press both Option keys and the answer
    appears as a small badge at the top of the screen.
-2. [**Quick chat**](#2-quick-chat): double-tap Option to ask a question
+2. [**Quick chat**](#2-quick-chat): double-tap left Option to ask a question
    without leaving your slides.
 3. [**Main window**](#3-the-main-window): choose your course folders and
    read the full conversation.
@@ -107,10 +107,14 @@ there is no question on screen, or when part of the question is cut off.
 
 ## 2. Quick chat
 
-**Double-tap Option** anywhere to open the chat box over whatever you are
+**Double-tap left Option** anywhere to open the chat box over whatever you are
 presenting. Type a question and press Return. Escape or a click elsewhere
 closes it. You can paste images with ⌘V, and drag the box to wherever you
 want it.
+
+**Double-tap right Option** to reset the conversation, as **Reset
+Conversation** does in the main window (your folders stay). It does
+nothing while an answer is on its way.
 
 The box shows only the latest question and answer. Answers come from your
 course files first and say which file they used.
@@ -128,7 +132,7 @@ Open it from the menu (**Shortcut Settings…**). On the left:
 - **Reference folders.** Every file in the folders you add is loaded, and
   each file shows whether it is ready. **Verify** asks Claude to list what
   it can see.
-- **Gesture reminder.** The two key gestures, at the bottom.
+- **Gesture reminder.** The key gestures, at the bottom.
 
 On the right is the one shared conversation: every quick-chat question and
 window check, with full explanations. **Reset Conversation** starts a new

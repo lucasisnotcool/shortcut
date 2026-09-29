@@ -34,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
 
         shortcutMonitor = GlobalShortcutMonitor(
-            onDoubleOption: { [weak self] in self?.showOverlay() },
+            onDoubleLeftOption: { [weak self] in self?.showOverlay() },
+            onDoubleRightOption: { [weak self] in self?.resetChat() },
             onBothOptions: { [weak self] in self?.answerCurrentWindow() }
         )
         shortcutMonitor?.isCapturingKeyboard = { [weak overlay] in overlay?.hasKeyboardFocus ?? false }
@@ -68,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let center = DistributedNotificationCenter.default()
         let triggers: [(String, @MainActor (AppDelegate) -> Void)] = [
             ("chat", { $0.showOverlay() }),
+            ("reset", { $0.resetChat() }),
             ("capture", { $0.answerCurrentWindow() }),
             ("close", { $0.overlayController?.close() }),
             ("verify", { $0.model.verifyContext() })
@@ -131,6 +133,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOverlay() {
         overlayController?.show()
+    }
+
+    private func resetChat() {
+        guard !model.isBusy else {
+            appLog.notice("Reset gesture ignored: a request is running")
+            return
+        }
+        appLog.notice("Reset gesture: clearing the conversation")
+        model.resetSession()
     }
 
     private func answerCurrentWindow() {

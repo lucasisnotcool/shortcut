@@ -65,7 +65,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(item("Download Shortcut \(update.version)…", action: #selector(openUpdate)))
             menu.addItem(.separator())
         }
-        menu.addItem(item("Open Chat", hint: "⌥ ⌥", action: #selector(openChat)))
+        menu.addItem(item("Open Chat", hint: "⌥L ⌥L", action: #selector(openChat)))
         menu.addItem(item("Check Active Window", hint: "⌥ + ⌥", action: #selector(checkWindow)))
         if model.badgeState != .idle && model.badgeState != .loading {
             menu.addItem(item("Clear Badge", action: #selector(clearBadge)))

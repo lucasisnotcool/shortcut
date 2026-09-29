@@ -181,7 +181,8 @@ private struct ContextSidebar: View {
 
     private var shortcutGuide: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ShortcutHint(keys: "⌥ ⌥", title: "Double-tap Option", subtitle: "Quick chat")
+            ShortcutHint(keys: "⌥L ⌥L", title: "Double-tap left Option", subtitle: "Quick chat")
+            ShortcutHint(keys: "⌥R ⌥R", title: "Double-tap right Option", subtitle: "Reset chat")
             ShortcutHint(keys: "⌥L+⌥R", title: "Both Option keys", subtitle: "Check the active window")
         }
     }
@@ -348,7 +349,7 @@ private struct ChatPane: View {
             Image(systemName: "bubble.left.and.text.bubble.right")
                 .font(.system(size: 30)).foregroundStyle(.tertiary)
             Text("No messages yet").font(.headline)
-            Text("Ask below, double-tap Option anywhere, or press both Option keys to check a question on screen. Everything lands in this conversation.")
+            Text("Ask below, double-tap left Option anywhere, or press both Option keys to check a question on screen. Everything lands in this conversation.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)

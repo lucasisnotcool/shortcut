@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/f2bd6850-dc85-43fd-a17b-516d93c196d7
 
 - Add a course folder in the main window (sidebar). Every file inside, including subfolders, is loaded straight into Claude's context, and the sidebar shows each file's status: **in context** (with a token estimate), **on demand** (images, scanned PDFs, or anything over the 200k-token budget; Claude opens these with Read), or **not available** (with the reason). Folders are rescanned before each request, so edits and new files are picked up automatically. **Verify** asks Claude, in the chat, to list the documents it can see.
 - The main window shows the one shared conversation. Quick chat, window checks and main-window messages all go to the same Claude session, which survives relaunches. **Reset Conversation** clears the chat and starts a new session; the loaded folders stay.
-- Double-tap either Option key to open the chat overlay. Return sends, Shift-Return adds a line, Escape or a click outside closes it. Paste images with Command-V. Drag the card to move it; the position is remembered.
+- Double-tap left Option to open the chat overlay; double-tap right Option to reset the conversation (same as Reset Conversation, without the confirmation; ignored while a request is running). Return sends, Shift-Return adds a line, Escape or a click outside closes it. Paste images with Command-V. Drag the card to move it; the position is remembered.
 - Press left and right Option together to capture the active app window and answer the quiz question on it. The menu-bar circle spins while Claude works, then shows:
 
   | Question | Badge | Example |
@@ -58,7 +58,7 @@ The app icon is drawn by `scripts/make-icon.swift`; `./scripts/make-icon.sh` reg
 
 If a window check fails, the menu-bar menu shows the reason. Logs: `log stream --predicate 'subsystem == "io.github.lucasisnotcool.shortcut"'`.
 
-For hands-free QC, launch with `open --env SHORTCUT_QC=1 dist/Shortcut.app`, then trigger gestures with `osascript -l JavaScript -e 'ObjC.import("Foundation"); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately("io.github.lucasisnotcool.shortcut.qc.capture", $(), $(), true)'` (also `.qc.chat`, `.qc.close`, `.qc.verify`).
+For hands-free QC, launch with `open --env SHORTCUT_QC=1 dist/Shortcut.app`, then trigger gestures with `osascript -l JavaScript -e 'ObjC.import("Foundation"); $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately("io.github.lucasisnotcool.shortcut.qc.capture", $(), $(), true)'` (also `.qc.chat`, `.qc.reset`, `.qc.close`, `.qc.verify`).
 
 Run tests with:
 
